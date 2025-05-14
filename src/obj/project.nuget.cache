@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "dgSpecHash": "EepWmnQmcPE=",
+  "success": true,
+  "projectFilePath": "/Users/jakobstrozberg/Desktop/CrewbossGame/src/src.csproj",
+  "expectedPackageFiles": [
+    "/Users/jakobstrozberg/.nuget/packages/monogame.content.builder.task/3.8.3/monogame.content.builder.task.3.8.3.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/monogame.framework.desktopgl/3.8.3/monogame.framework.desktopgl.3.8.3.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/monogame.library.openal/1.23.1.10/monogame.library.openal.1.23.1.10.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/monogame.library.sdl/2.32.2.1/monogame.library.sdl.2.32.2.1.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/nvorbis/0.10.4/nvorbis.0.10.4.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/system.memory/4.5.3/system.memory.4.5.3.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/system.valuetuple/4.5.0/system.valuetuple.4.5.0.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/microsoft.netcore.app.ref/8.0.15/microsoft.netcore.app.ref.8.0.15.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.15/microsoft.aspnetcore.app.ref.8.0.15.nupkg.sha512",
+    "/Users/jakobstrozberg/.nuget/packages/microsoft.netcore.app.host.osx-arm64/8.0.15/microsoft.netcore.app.host.osx-arm64.8.0.15.nupkg.sha512"
+  ],
+  "logs": []
+}
