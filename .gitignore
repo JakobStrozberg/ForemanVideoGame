@@ -9,5 +9,9 @@ obj/
 *.mgcontent
 *.mgstats
 
-# stray debug screenshots in repo root
-/Screenshot*.png
+# local agent settings
+.claude/
+
+# stray debug screenshots
+Screenshot*.png
+/d.png
