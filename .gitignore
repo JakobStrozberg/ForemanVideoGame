@@ -1,0 +1,13 @@
+# build output
+bin/
+obj/
+
+# macOS
+.DS_Store
+
+# MonoGame content build cache
+*.mgcontent
+*.mgstats
+
+# stray debug screenshots in repo root
+/Screenshot*.png

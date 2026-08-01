@@ -26,6 +26,18 @@
     <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.*" />
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.*" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Generated blocks (map art + tile data from tools/ArtTool) bypass the
+         content pipeline and load at runtime from the output directory -->
+    <None Include="Content/GameTextures/Maps/Generated/**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Generated horizon layers + runtime prop sprites -->
+    <None Include="Content/GameTextures/Generated/**" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Content/tweaks.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Generated audio (tools/ArtTool sounds) -->
+    <None Include="Content/Audio/**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- ATV sprites load via Texture2D.FromStream as a pipeline fallback -->
+    <None Include="Content/GameTextures/TransParentQuadPositions/*.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <Target Name="RestoreDotnetTools" BeforeTargets="Restore">
     <Message Text="Restoring dotnet tools" Importance="High" />
     <Exec Command="dotnet tool restore" />

@@ -10,6 +10,7 @@ public class ScreenManager
     private Game1 _game;
     private Screen _currentScreen;
     private Dictionary<string, Screen> _screens;
+    private readonly HashSet<Screen> _loaded = new();
     
     public ScreenManager(Game1 game)
     {
@@ -28,8 +29,8 @@ public class ScreenManager
     
     public void LoadContent()
     {
-        // Load content for initial screen only
-        if (_currentScreen != null)
+        // Load content for initial screen only (skip if ChangeScreen already did)
+        if (_currentScreen != null && _loaded.Add(_currentScreen))
         {
             _currentScreen.LoadContent();
         }
@@ -56,7 +57,7 @@ public class ScreenManager
             Screen newScreen = _screens[screenName];
             
             // Load content for the new screen if it hasn't been loaded yet
-            if (newScreen != _currentScreen)
+            if (newScreen != _currentScreen && _loaded.Add(newScreen))
             {
                 try
                 {
@@ -82,6 +83,11 @@ public class ScreenManager
         _currentScreen?.Update(gameTime);
     }
     
+    public void PreDraw(GameTime gameTime, SpriteBatch spriteBatch)
+    {
+        _currentScreen?.PreDraw(gameTime, spriteBatch);
+    }
+
     public void Draw(GameTime gameTime, SpriteBatch spriteBatch)
     {
         _currentScreen?.Draw(gameTime, spriteBatch);

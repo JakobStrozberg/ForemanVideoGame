@@ -26,6 +26,12 @@ public class Game1 : Game
         _graphics = new GraphicsDeviceManager(this);
         Content.RootDirectory = "Content";
         IsMouseVisible = true;
+
+        // Run unlocked, paced by vsync: one update per displayed frame at the
+        // monitor's native refresh (120Hz Macs included) instead of the fixed
+        // 60Hz step doubling/skipping frames — even pacing, no judder.
+        IsFixedTimeStep = false;
+        _graphics.SynchronizeWithVerticalRetrace = true;
         
         // Set screen dimensions
         _graphics.PreferredBackBufferWidth = _screenWidth;
@@ -40,7 +46,21 @@ public class Game1 : Game
         // Initialize game components
         _gameManager = new GameManager(this);
         _screenManager = new ScreenManager(this);
-        _screenManager.Initialize();
+
+        // F5 relaunch: jump straight back into the map, skipping the menu
+        string autoMap = System.Environment.GetEnvironmentVariable("CREWBOSS_AUTOSTART");
+        if (!string.IsNullOrEmpty(autoMap))
+        {
+            _screenManager.RegisterScreen("MainMenu", new MainMenuScreen(this));
+            var gameplay = new GameplayScreen(this, autoMap);
+            gameplay.SkipIntro();
+            _screenManager.RegisterScreen("Gameplay", gameplay);
+            _screenManager.ChangeScreen("Gameplay");
+        }
+        else
+        {
+            _screenManager.Initialize();
+        }
         
         base.Initialize();
     }
@@ -66,13 +86,16 @@ public class Game1 : Game
 
     protected override void Draw(GameTime gameTime)
     {
+        // Render-target passes (e.g. gameplay world buffer) before the main batch
+        _screenManager.PreDraw(gameTime, _spriteBatch);
+
         GraphicsDevice.Clear(Color.Black);
 
         _spriteBatch.Begin();
-        
+
         // Draw current screen
         _screenManager.Draw(gameTime, _spriteBatch);
-        
+
         _spriteBatch.End();
 
         base.Draw(gameTime);
