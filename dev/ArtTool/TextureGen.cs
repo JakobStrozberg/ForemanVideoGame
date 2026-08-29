@@ -220,14 +220,6 @@ public static class TextureGen
         }
     }
 
-    private static void FillCircleWrapped(Image<Rgba32> img, int cx, int cy, int r, Rgba32 col)
-    {
-        for (int y = -r; y <= r; y++)
-            for (int x = -r; x <= r; x++)
-                if (x * x + y * y <= r * r)
-                    Put(img, cx + x, cy + y, col);
-    }
-
     private static void Put(Image<Rgba32> img, int x, int y, Rgba32 col) =>
         img[Noise.Mod(x, img.Width), Noise.Mod(y, img.Height)] = col;
 

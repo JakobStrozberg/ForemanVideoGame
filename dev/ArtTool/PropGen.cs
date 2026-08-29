@@ -44,8 +44,8 @@ public static class PropGen
         }
 
         // stacked seedling boxes under the tarp mouth (front row + half-hidden back row)
-        DrawBoxRow(img, rng, seed, y: baseY + 2, count: 3, offsetX: 14, boxW: 20, boxH: 9, dim: true);
-        DrawBoxRow(img, rng, seed + 9, y: baseY + 8, count: 4, offsetX: 6, boxW: 20, boxH: 11, dim: false);
+        DrawBoxRow(img, rng, y: baseY + 2, count: 3, offsetX: 14, boxW: 20, boxH: 9, dim: true);
+        DrawBoxRow(img, rng, y: baseY + 8, count: 4, offsetX: 6, boxW: 20, boxH: 11, dim: false);
 
         // ground shadow line
         for (int x = 4; x < W - 4; x++)
@@ -63,7 +63,7 @@ public static class PropGen
         return img;
     }
 
-    private static void DrawBoxRow(Image<Rgba32> img, Random rng, int seed, int y, int count, int offsetX, int boxW, int boxH, bool dim)
+    private static void DrawBoxRow(Image<Rgba32> img, Random rng, int y, int count, int offsetX, int boxW, int boxH, bool dim)
     {
         for (int b = 0; b < count; b++)
         {
@@ -133,7 +133,6 @@ public static class PropGen
         for (int v = 0; v < N; v++)
         {
             using var cell = new Image<Rgba32>(W, H);
-            (int x, int y, int w, int h)? capRect = null;
             if (v < 6)
             {
                 // log: thick shaded cylinder at angle v*30deg, squashed in y
@@ -160,7 +159,6 @@ public static class PropGen
                 // horizon cross-section source)
                 int ex = W / 2 + (int)(ca * halfLen);
                 int ey = H / 2 + (int)(sa * halfLen) - 3;
-                capRect = (ex - 4, ey - 5, 9, 11);
                 for (int dy = -4; dy <= 4; dy++)
                     for (int dx = -3; dx <= 3; dx++)
                     {

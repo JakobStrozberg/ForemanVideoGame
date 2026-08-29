@@ -58,14 +58,6 @@ public static class GamePalette
         C(84, 84, 80), C(108, 108, 102), C(134, 134, 126), C(162, 160, 150),
     };
 
-    // Horizon view — sky gradient (zenith → horizon), clouds, distant ridges
-    public static readonly Rgba32[] Sky =
-    {
-        C(110, 158, 188), C(140, 184, 208), C(172, 208, 226), C(202, 228, 238),
-    };
-    public static readonly Rgba32 Cloud = C(238, 244, 248);
-    public static readonly Rgba32 RidgeFar = C(96, 128, 138);
-    public static readonly Rgba32 RidgeMid = C(56, 92, 92);
 
     // Foreman figure
     public static readonly Rgba32 HardHat = C(228, 186, 44);

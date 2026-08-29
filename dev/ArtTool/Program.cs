@@ -8,9 +8,6 @@ if (args.Length == 0)
         ArtTool — Crewboss asset pipeline
 
         Usage:
-          arttool palette <inputDir> <out.json> [maxColors=32]
-              Extract a master palette (median cut) from all images in a directory.
-
           arttool compose <block.json> <brushDir> <outDir>
               Composite a block definition into <outDir>/<Name>.png + tiles/trees/debris/veg json
 
@@ -23,9 +20,6 @@ if (args.Length == 0)
 
 switch (args[0])
 {
-    case "palette":
-        Palette.Extract(args[1], args[2], args.Length > 3 ? int.Parse(args[3]) : 32);
-        return 0;
     case "compose":
     {
         var def = JsonSerializer.Deserialize<BlockDef>(File.ReadAllText(args[1]),

@@ -16,7 +16,6 @@ public static class FigureGen
     public const int FrameW = 16, FrameH = 22;
     public const int WalkFrames = 4;
     public const int PlanterVariants = 4;
-    public const int PlanterFramesPerVariant = WalkFrames * 3 + 1; // 13
 
     private static readonly Rgba32[] CapColors =
     {

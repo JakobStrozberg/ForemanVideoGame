@@ -18,8 +18,6 @@ public static class Compositor
     private const char CREAM = 'C';
     private const char SWAMP = 'W';
     private const char ROCK = 'X';
-    private const char ROAD = 'R';
-    private const char TRAIL = 'T';
     private const char OBSTACLE = 'O';
 
     /// <summary>
@@ -47,7 +45,7 @@ public static class Compositor
         Directory.CreateDirectory(outDir);
 
         // --- geometry ---
-        var spans = BuildBoundarySpans(def, wPx, hPx);
+        var spans = BuildBoundarySpans(def, hPx);
         bool InsideBlock(float x, float y)
         {
             if (y < 0 || y >= hPx) return false;
@@ -456,7 +454,7 @@ public static class Compositor
     // ---------- geometry ----------
 
     /// <summary>Irregular rectangle-ish radial polygon → per-row x spans of the block interior.</summary>
-    private static List<(float xs, float xe)>[] BuildBoundarySpans(BlockDef def, int wPx, int hPx)
+    private static List<(float xs, float xe)>[] BuildBoundarySpans(BlockDef def, int hPx)
     {
         int ts = def.TileSize;
         int th = (int)(ts * SQUASH);

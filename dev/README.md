@@ -24,9 +24,6 @@ dotnet run --project dev/ArtTool -c Release -- compose assets/blocks/Block1.json
 # every runtime sprite atlas: trees, debris, veg, quad, foreman, planters,
 # seedlings, cache, prompt badges, font
 dotnet run --project dev/ArtTool -c Release -- sprites game/Content/GameTextures/Generated
-
-# utility: extract a palette from reference images
-dotnet run --project dev/ArtTool -- palette <imageDir> assets/palette.json 32
 ```
 The game loads generated files at runtime from `game/Content`; the desktop head
 copies them to its output on build. F5 in-game rebuilds and relaunches.
@@ -100,4 +97,4 @@ Add a terrain here and the game picks it up without code changes.
 
 ### Sprite brushes (`assets/brushes/`)
 
-`Truck.png` is the only brush the compositor still uses; the rest are legacy.
+`Truck.png` — the only hand-made sprite the compositor still places.

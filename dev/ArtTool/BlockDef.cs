@@ -29,8 +29,8 @@ public class BoundaryDef
 {
     public int MarginTiles { get; set; } = 5;      // min forest depth around the block
     public double Roughness { get; set; } = 0.10;  // radius noise amplitude (fraction)
-    public int[] CenterTile { get; set; }          // optional; default = map center
-    public int[] ExtentTiles { get; set; }         // optional half-extents; default = fill minus margin
+    public int[]? CenterTile { get; set; }          // optional; default = map center
+    public int[]? ExtentTiles { get; set; }         // optional half-extents; default = fill minus margin
 }
 
 /// <summary>Organic region: union of random circles seeded inside the given rect (tile coords).</summary>

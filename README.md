@@ -23,7 +23,7 @@ platforms/
 dev/
   ArtTool/       procedural asset generator (maps, sprite atlases)
   scripts/       run.sh, regen.sh
-assets/          generator inputs: block definitions, sprite brushes, palette
+assets/          generator inputs: block definitions, the truck sprite brush
 docs/            design docs + reference photos
 ```
 

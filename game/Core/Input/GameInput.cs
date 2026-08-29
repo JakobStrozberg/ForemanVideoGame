@@ -18,7 +18,6 @@ public sealed class GameInput
         _cur = Keyboard.GetState();
     }
 
-    private bool Down(Keys a) => _cur.IsKeyDown(a);
     private bool Down(Keys a, Keys b) => _cur.IsKeyDown(a) || _cur.IsKeyDown(b);
     private bool Down(Keys a, Keys b, Keys c) => _cur.IsKeyDown(a) || _cur.IsKeyDown(b) || _cur.IsKeyDown(c);
     private bool Pressed(Keys k) => _cur.IsKeyDown(k) && _prev.IsKeyUp(k);

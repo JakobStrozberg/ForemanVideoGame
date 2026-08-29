@@ -597,10 +597,6 @@ public class MainMenuScreen : Screen
             spriteBatch.Draw(_mainMenuBackgroundTexture, new Rectangle(0, 0, _screenWidth, _screenHeight), sourceRect, Color.White);
         }
         
-        // Draw title text "Select Map"
-        string titleText = "SELECT MAP";
-        Vector2 titlePosition = new Vector2(_screenWidth / 2, _screenHeight / 6);
-        
         // Draw the map selection buttons - with darkening effect if they are being animated
         Color map1Color = (_isButtonAnimating && _animatingButtonRect == _map1ButtonRect) ? Color.Gray : Color.White;
         Color map2Color = (_isButtonAnimating && _animatingButtonRect == _map2ButtonRect) ? Color.Gray : Color.White;
