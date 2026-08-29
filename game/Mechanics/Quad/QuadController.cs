@@ -54,7 +54,11 @@ public sealed class QuadController
     }
 
     /// <summary>Height of the chassis above the ground under it (suspension/airtime).</summary>
-    public float AirHeight(WorldMap map) => MathF.Max(0f, ChassisLift - map.Lift(Pos));
+    public float AirHeight(WorldMap map)
+    {
+        float surface = map.Lift(Pos) + MathF.Max(0f, WorldMap.BumpAt(Pos.X, Pos.Y) * map.RoughAt(Pos));
+        return MathF.Max(0f, ChassisLift - surface);
+    }
 
     public void Update(GameInput input, WorldMap map, float dt)
     {
@@ -80,7 +84,7 @@ public sealed class QuadController
         // display's refresh, so raise them to dt*60 for identical handling
         float PerFrame(float f) => MathF.Pow(f, dt * 60f);
 
-        Drifting = (braking || drift) && steer != 0f && speed0 > 20f;
+        Drifting = (braking || drift) && steer != 0f && speed0 > 40f;
 
         if (braking)
         {
@@ -90,7 +94,7 @@ public sealed class QuadController
             if (steer != 0f)
             {
                 heading = Rotate(heading, steer * 4.5f * dt);
-                if (speed0 > 13f)
+                if (speed0 > 26f)
                     Velocity = TurnToward(Velocity / MathF.Max(speed0, 0.01f), heading, 2.6f * dt) * Velocity.Length();
             }
         }
@@ -123,7 +127,7 @@ public sealed class QuadController
             // steer: snappy hands, easing off some at speed
             if (steer != 0f)
             {
-                float turnRate = MathHelper.Lerp(4.3f, 2.0f, MathF.Min(1f, speed0 / 107f));
+                float turnRate = MathHelper.Lerp(4.3f, 2.0f, MathF.Min(1f, speed0 / 214f));
                 heading = Rotate(heading, steer * turnRate * dt);
             }
 
@@ -140,7 +144,7 @@ public sealed class QuadController
             float sp2 = Velocity.Length();
             if (sp2 > 1f)
             {
-                float gripBase = MathHelper.Lerp(0.84f, 0.91f, MathF.Min(1f, speed0 / 127f));
+                float gripBase = MathHelper.Lerp(0.84f, 0.91f, MathF.Min(1f, speed0 / 254f));
                 Vector2 travel = reverse ? -heading : heading;
                 Velocity = Vector2.Lerp(Velocity, travel * sp2, 1f - PerFrame(gripBase));
             }

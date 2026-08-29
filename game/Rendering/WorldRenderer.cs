@@ -23,6 +23,7 @@ public sealed class WorldRenderer
         public bool Shadow;
         public float LiftExtra; // height above the ground (suspension/airtime)
         public float Rot;       // sprite lean (radians) — terrain tilt
+        public float ShadowLen; // fixed shadow offset; 0 = derive from sprite height
     }
 
     private readonly GameArt _art;
@@ -90,7 +91,8 @@ public sealed class WorldRenderer
                 Scale = zoom,
                 LiftExtra = rider ? _quad.AirHeight(_map) : 0f,
                 Rot = rider ? _quad.Tilt : _map.TiltAt(_quad.Pos),
-                Shadow = true
+                Shadow = true,
+                ShadowLen = 3f // low vehicle seen from above: hugs the ground
             });
         }
 
@@ -170,7 +172,7 @@ public sealed class WorldRenderer
             while (e < entities.Count && entities[e].SortY <= y)
             {
                 var en = entities[e++];
-                DrawWorldSprite(sb, en.Tex, en.Src, en.X, en.BaseY, en.Scale, en.Fx, en.Shadow, en.LiftExtra, en.Rot);
+                DrawWorldSprite(sb, en.Tex, en.Src, en.X, en.BaseY, en.Scale, en.Fx, en.Shadow, en.LiftExtra, en.Rot, en.ShadowLen);
             }
         }
 
@@ -193,7 +195,8 @@ public sealed class WorldRenderer
     /// under; offset grows with sprite height and with airtime.
     /// </summary>
     private void DrawWorldSprite(SpriteBatch sb, Texture2D tex, Rectangle src, float wx, float wy, float scale,
-        SpriteEffects fx = SpriteEffects.None, bool shadow = false, float liftExtra = 0f, float rot = 0f)
+        SpriteEffects fx = SpriteEffects.None, bool shadow = false, float liftExtra = 0f, float rot = 0f,
+        float shadowLen = 0f)
     {
         float zoom = _cam.Zoom;
         float destX = (wx - _cam.Position.X) * zoom;
@@ -206,7 +209,7 @@ public sealed class WorldRenderer
         bool airborne = liftExtra > 2.5f;
         if (shadow || airborne)
         {
-            float len = MathF.Min(14f, src.Height * scale * 0.22f) + liftExtra * zoom * 0.6f;
+            float len = (shadowLen > 0f ? shadowLen : MathF.Min(14f, src.Height * scale * 0.22f)) + liftExtra * zoom * 0.6f;
             var shPos = new Vector2(destX + len * 0.9f, groundY + len * 0.55f);
             float a = airborne ? 0.15f : 0.24f;
             sb.Draw(tex, shPos, src, Color.Black * a, rot, new Vector2(src.Width / 2f, src.Height), scale, fx, 0f);

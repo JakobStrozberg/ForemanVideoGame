@@ -185,7 +185,11 @@ public static class Compositor
                 if (!forest) continue;
                 // generous corridor: keep trees well clear of every road (fsr,
                 // block road, trails) so the way onto the block reads open
-                if (RoadPath.NearAny(roadPaths, px, py, 26)) continue;
+                // trees are bottom-anchored and tall: a tree just south of a road
+                // covers it with its crown, so also clear the canopy footprint
+                if (RoadPath.NearAny(roadPaths, px, py, 26) ||
+                    RoadPath.NearAny(roadPaths, px, py - 45, 20) ||
+                    RoadPath.NearAny(roadPaths, px, py - 90, 14)) continue;
                 int v = (int)(Noise.Hash(gx, gy, def.Seed + 13) * TreeGen.AtlasVariants) % TreeGen.AtlasVariants;
                 trees.Add(((int)px, (int)py, v));
             }

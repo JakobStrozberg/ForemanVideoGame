@@ -75,7 +75,7 @@ public sealed class QuadEffects
         // segment so it reads as one continuous cloud, not scattered puffs
         if (speed > Tweaks.DustMinSpeed)
         {
-            float ramp = MathF.Min(1f, (speed - Tweaks.DustMinSpeed) / 43f);
+            float ramp = MathF.Min(1f, (speed - Tweaks.DustMinSpeed) / 86f);
             float spacing = MathHelper.Lerp(13f, 7f, ramp);
             _dustSpawnDist += travelled;
             int guard = 0;
@@ -101,7 +101,7 @@ public sealed class QuadEffects
         // road smoke: any movement on road/trail kicks up a gravel-exhaust
         // trail — no speed gate beyond a crawl, so puttering feels alive
         string terr = map.TerrainName(quad.Pos);
-        if (speed > 8f && (terr == "road" || terr == "trail"))
+        if (speed > 16f && (terr == "road" || terr == "trail"))
         {
             _smokeSpawnDist += travelled;
             int guard = 0;
@@ -124,7 +124,7 @@ public sealed class QuadEffects
         else _smokeSpawnDist = 0f;
 
         // tire tracks: stamp a twin-tread mark every 13px of travel
-        if (speed > 13f)
+        if (speed > 26f)
         {
             _trackDist += travelled;
             if (_trackDist > 13f)

@@ -2,22 +2,22 @@
   "cameraZoom": 1.3,
   "footSpeed": 62,
   "shiftTime": 1.5,
-  "dustMinSpeed": 70,
+  "dustMinSpeed": 140,
   "gearMax": [
-    32,
-    32,
-    50,
-    68,
-    93,
-    127
+    64,
+    64,
+    100,
+    136,
+    186,
+    254
   ],
   "gearAccel": [
-    100,
-    107,
-    83,
-    80,
-    63,
-    55
+    200,
+    214,
+    166,
+    160,
+    126,
+    110
   ],
   "gearTorque": [
     1.0,

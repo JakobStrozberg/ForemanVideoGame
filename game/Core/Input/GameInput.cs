@@ -59,6 +59,12 @@ public sealed class GameInput
     public bool AimConfirm => Pressed(Keys.C, Keys.E);
     public bool AimCancel => Pressed(Keys.Q, Keys.F);
 
+    // ---- menus ----
+    public bool Pause => Pressed(Keys.Escape);
+    public bool MenuUp => Pressed(Keys.Up, Keys.W);
+    public bool MenuDown => Pressed(Keys.Down, Keys.S);
+    public bool MenuSelect => Pressed(Keys.Enter, Keys.Space);
+
     // ---- meta ----
     public bool Reset => Pressed(Keys.R);
     public bool Restart => Pressed(Keys.F5);

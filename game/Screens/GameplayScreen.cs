@@ -32,6 +32,11 @@ public class GameplayScreen : Screen
 
     private bool _showHelp = true;
 
+    // pause menu: Resume / Restart Day / Quit To Menu
+    private bool _paused;
+    private int _pauseIndex;
+    public static readonly string[] PauseItems = { "RESUME", "RESTART DAY", "QUIT TO MENU" };
+
     public GameplayScreen(CrewbossGame game, string blockName) : base(game)
     {
         _blockName = blockName;
@@ -88,6 +93,29 @@ public class GameplayScreen : Screen
 
         if (_input.Restart) { Restart(); return; }
 
+        // Esc: pause during the day; in the overview or on the score screen it quits to the menu
+        if (_input.Pause)
+        {
+            if (_map == null || _day.PreGame || _day.Over) { QuitToMenu(); return; }
+            _paused = !_paused;
+            _pauseIndex = 0;
+        }
+        if (_paused)
+        {
+            if (_input.MenuUp) _pauseIndex = (_pauseIndex + PauseItems.Length - 1) % PauseItems.Length;
+            if (_input.MenuDown) _pauseIndex = (_pauseIndex + 1) % PauseItems.Length;
+            if (_input.MenuSelect)
+            {
+                switch (_pauseIndex)
+                {
+                    case 0: _paused = false; break;
+                    case 1: RestartDay(); break;
+                    case 2: QuitToMenu(); break;
+                }
+            }
+            return;
+        }
+
         // +/- = presentation zoom (world math stays 1:1)
         if (_input.ZoomIn) { _presenter.ApplyZoom(_presenter.Zoom * 1.15f); SyncView(); }
         if (_input.ZoomOut) { _presenter.ApplyZoom(_presenter.Zoom / 1.15f); SyncView(); }
@@ -136,6 +164,18 @@ public class GameplayScreen : Screen
         Vector2 lead = _player.Mounted ? _quad.Velocity * 0.25f : Vector2.Zero;
         _camera.Update(_player.Pos, lead, _map.Bounds, dt);
     }
+
+    /// <summary>A fresh screen for the same block: new day, new crew, empty caches.</summary>
+    private void RestartDay()
+    {
+        Tweaks.Load();
+        var fresh = new GameplayScreen(Game, _blockName);
+        fresh.SkipIntro();
+        Game.ScreenManager.RegisterScreen("Gameplay", fresh);
+        Game.ScreenManager.ChangeScreen("Gameplay");
+    }
+
+    private void QuitToMenu() => Game.ScreenManager.ChangeScreen("MainMenu");
 
     private void ResetPlayer()
     {
@@ -198,6 +238,8 @@ public class GameplayScreen : Screen
         spriteBatch.Begin(SpriteSortMode.Deferred, null, SamplerState.PointClamp);
         if (_map != null && !_day.PreGame)
             _hud.Draw(spriteBatch, _presenter.ViewWidth, _presenter.ViewHeight, _day, _quad, _player, _planters, _showHelp);
+        if (_paused)
+            _hud.DrawPause(spriteBatch, _presenter.ViewWidth, _presenter.ViewHeight, PauseItems, _pauseIndex);
         spriteBatch.End();
         gd.SetRenderTarget(null);
     }

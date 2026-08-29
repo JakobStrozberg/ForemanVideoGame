@@ -120,6 +120,23 @@ public sealed class Hud
         font.DrawCentered(sb, "PRESS ANY KEY TO START THE DAY", viewW / 2f, viewH - 44, 3f, new Color(255, 222, 92));
     }
 
+    /// <summary>Pause overlay: dim the world, list the options, highlight the selection.</summary>
+    public void DrawPause(SpriteBatch sb, int viewW, int viewH, string[] items, int selected)
+    {
+        sb.Draw(_art.Solid("pauseDim", Color.Black), new Rectangle(0, 0, viewW, viewH), Color.White * 0.6f);
+        var font = _art.Font;
+        if (font == null) return;
+        float cx = viewW / 2f;
+        font.DrawCentered(sb, "PAUSED", cx, viewH * 0.28f, 7f, Color.White);
+        for (int i = 0; i < items.Length; i++)
+        {
+            bool sel = i == selected;
+            font.DrawCentered(sb, (sel ? "- " : "") + items[i] + (sel ? " -" : ""), cx, viewH * 0.45f + i * 44, 4f,
+                sel ? new Color(255, 222, 92) : Color.White);
+        }
+        font.DrawCentered(sb, "UP/DOWN . ENTER . ESC RESUMES", cx, viewH * 0.45f + items.Length * 44 + 30, 2.4f, Color.Gray);
+    }
+
     private void DrawScore(SpriteBatch sb, int viewW, int viewH, PlanterSystem planters)
     {
         sb.Draw(_art.Solid("scoreDim", Color.Black), new Rectangle(0, 0, viewW, viewH), Color.White * 0.72f);
