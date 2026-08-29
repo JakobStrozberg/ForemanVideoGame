@@ -54,11 +54,17 @@ definition format.
 `game/Content/tweaks.json` holds live feel values (gearing, foot speed, dust,
 zoom). Edit, press F5 in-game.
 
-## Adding a block
+## Blocks
 
+Three blocks ship, in play order: `Block1` Creek Flat (small, flat), `Block2`
+The Bench (rolling), `Block3` Burn Ridge (big, hilly, swamp and rock). A block
+unlocks once the previous one has a star. Best stars save to
+`~/Library/Application Support/Crewboss/progress.json` (per-platform app data).
+
+Adding one:
 1. Copy `assets/blocks/Block1.json`, rename, change the seed and geometry.
 2. `dev/scripts/regen.sh <Name>` writes `game/Content/Maps/<Name>/`.
-3. Point a menu button (or `CREWBOSS_AUTOSTART=<Name>`) at it.
+3. Add it to `Blocks.All` in `game/Core/Progress.cs` (title + blurb).
 
 ## Mobile
 

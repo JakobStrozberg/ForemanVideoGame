@@ -11,11 +11,14 @@ namespace Crewboss.Core;
 public sealed class GameInput
 {
     private KeyboardState _cur, _prev;
+    private MouseState _mouse, _mousePrev;
 
     public void Update()
     {
         _prev = _cur;
         _cur = Keyboard.GetState();
+        _mousePrev = _mouse;
+        _mouse = Mouse.GetState();
     }
 
     private bool Down(Keys a, Keys b) => _cur.IsKeyDown(a) || _cur.IsKeyDown(b);
@@ -64,6 +67,10 @@ public sealed class GameInput
     public bool MenuUp => Pressed(Keys.Up, Keys.W);
     public bool MenuDown => Pressed(Keys.Down, Keys.S);
     public bool MenuSelect => Pressed(Keys.Enter, Keys.Space);
+    public bool MenuLeft => Pressed(Keys.Left, Keys.A);
+    public bool MenuRight => Pressed(Keys.Right, Keys.D);
+    public Point MousePos => new(_mouse.X, _mouse.Y);
+    public bool MouseClicked => _mouse.LeftButton == ButtonState.Pressed && _mousePrev.LeftButton == ButtonState.Released;
 
     // ---- meta ----
     public bool Reset => Pressed(Keys.R);

@@ -31,6 +31,7 @@ public class GameplayScreen : Screen
     private Hud _hud;
 
     private bool _showHelp = true;
+    private float _preGameGrace = 0.35f; // the menu keypress that launched us must not skip the overview
 
     // pause menu: Resume / Restart Day / Quit To Menu
     private bool _paused;
@@ -126,7 +127,8 @@ public class GameplayScreen : Screen
         // pre-game: block overview until any key
         if (_day.PreGame)
         {
-            if (_input.AnyKeyPressed) _day.PreGame = false;
+            _preGameGrace -= dt;
+            if (_preGameGrace <= 0f && _input.AnyKeyPressed) _day.PreGame = false;
             return;
         }
 
@@ -136,7 +138,7 @@ public class GameplayScreen : Screen
             if (_input.Reset) { _day.Restart(); ResetPlayer(); }
             return;
         }
-        if (_day.Update(dt)) return;
+        if (_day.Update(dt)) { RecordResult(); return; }
 
         if (_input.Reset) ResetPlayer();
 
@@ -176,6 +178,14 @@ public class GameplayScreen : Screen
     }
 
     private void QuitToMenu() => Game.ScreenManager.ChangeScreen("MainMenu");
+
+    /// <summary>Day over: keep the best star result for this block.</summary>
+    private void RecordResult()
+    {
+        if (_planters == null) return;
+        int stars = DayClock.Stars(_planters.TreesPlanted, _planters.Faults, (int)_planters.IdleSeconds);
+        Progress.Load().Record(_blockName, stars);
+    }
 
     private void ResetPlayer()
     {
@@ -227,7 +237,7 @@ public class GameplayScreen : Screen
         spriteBatch.Begin(SpriteSortMode.Deferred, null, SamplerState.PointClamp);
         if (_map != null)
         {
-            if (_day.PreGame) _hud.DrawPreGame(spriteBatch, _presenter.ViewWidth, _presenter.ViewHeight, _map.Texture, _blockName);
+            if (_day.PreGame) _hud.DrawPreGame(spriteBatch, _presenter.ViewWidth, _presenter.ViewHeight, _map.Texture, Blocks.Get(_blockName).Title);
             else _world.Draw(spriteBatch);
         }
         spriteBatch.End();

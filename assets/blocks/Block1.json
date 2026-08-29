@@ -1,151 +1,22 @@
 {
   "name": "Block1",
   "tileSize": 32,
-  "width": 80,
-  "height": 86,
-  "seed": 7,
+  "width": 56,
+  "height": 60,
+  "seed": 3,
   "pixelSize": 1,
-  "boundary": {
-    "centerTile": [
-      40,
-      36
-    ],
-    "extentTiles": [
-      33,
-      29
-    ],
-    "roughness": 0.14
-  },
+  "hilliness": 0.3,
+  "boundary": { "centerTile": [28, 26], "extentTiles": [22, 19], "roughness": 0.10 },
   "landRegions": [
-    {
-      "type": "cream",
-      "x": 12,
-      "y": 40,
-      "w": 16,
-      "h": 17
-    },
-    {
-      "type": "swamp",
-      "x": 58,
-      "y": 43,
-      "w": 13,
-      "h": 14
-    },
-    {
-      "type": "rock",
-      "x": 60,
-      "y": 14,
-      "w": 11,
-      "h": 13
-    }
+    { "type": "cream", "x": 8, "y": 28, "w": 12, "h": 10 }
   ],
-  "leavePatches": [
-    {
-      "x": 30,
-      "y": 20,
-      "w": 10,
-      "h": 11
-    }
-  ],
+  "leavePatches": [],
   "roads": [
-    {
-      "kind": "fsr",
-      "width": 1.5,
-      "points": [
-        [
-          0,
-          72
-        ],
-        [
-          12,
-          74
-        ],
-        [
-          28,
-          70
-        ],
-        [
-          44,
-          76
-        ],
-        [
-          60,
-          72
-        ],
-        [
-          79,
-          74
-        ]
-      ]
-    },
-    {
-      "kind": "block",
-      "width": 1,
-      "points": [
-        [
-          52,
-          73
-        ],
-        [
-          49,
-          60
-        ],
-        [
-          53,
-          47
-        ],
-        [
-          50,
-          33
-        ],
-        [
-          52,
-          20
-        ]
-      ]
-    },
-    {
-      "kind": "trail",
-      "width": 0.5,
-      "points": [
-        [
-          51,
-          43
-        ],
-        [
-          43,
-          47
-        ],
-        [
-          34,
-          41
-        ],
-        [
-          26,
-          46
-        ],
-        [
-          24,
-          53
-        ]
-      ]
-    }
+    { "kind": "fsr", "width": 1.5, "points": [[0, 52], [14, 53], [30, 51], [44, 53], [55, 52]] },
+    { "kind": "block", "width": 1, "points": [[28, 52], [27, 40], [29, 28], [28, 14]] }
   ],
   "props": [
-    {
-      "type": "truck",
-      "tile": [
-        16,
-        73
-      ]
-    },
-    {
-      "type": "truck",
-      "tile": [
-        22,
-        72
-      ]
-    }
-  ],
-  "hilliness": 1.0
+    { "type": "truck", "tile": [10, 52] },
+    { "type": "truck", "tile": [15, 52] }
+  ]
 }

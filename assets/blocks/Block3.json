@@ -1,0 +1,32 @@
+{
+  "name": "Block3",
+  "tileSize": 32,
+  "width": 100,
+  "height": 110,
+  "seed": 11,
+  "pixelSize": 1,
+  "hilliness": 1.0,
+  "boundary": { "centerTile": [50, 50], "extentTiles": [42, 40], "roughness": 0.20 },
+  "landRegions": [
+    { "type": "cream", "x": 20, "y": 62, "w": 18, "h": 16 },
+    { "type": "swamp", "x": 66, "y": 60, "w": 22, "h": 20 },
+    { "type": "rock",  "x": 14, "y": 14, "w": 16, "h": 18 },
+    { "type": "rock",  "x": 70, "y": 14, "w": 14, "h": 14 }
+  ],
+  "leavePatches": [
+    { "x": 44, "y": 30, "w": 12, "h": 12 },
+    { "x": 30, "y": 80, "w": 10, "h": 8 }
+  ],
+  "roads": [
+    { "kind": "fsr",   "width": 1.5, "points": [[0, 100], [18, 102], [36, 98], [54, 103], [72, 99], [99, 101]] },
+    { "kind": "block", "width": 1,   "points": [[54, 102], [52, 86], [56, 70], [50, 54], [53, 38], [50, 22]] },
+    { "kind": "block", "width": 1,   "points": [[36, 99], [30, 84], [26, 68], [24, 50]] },
+    { "kind": "trail", "width": 0.5, "points": [[52, 60], [40, 64], [32, 58]] },
+    { "kind": "trail", "width": 0.5, "points": [[54, 44], [66, 48], [76, 42]] }
+  ],
+  "props": [
+    { "type": "truck", "tile": [12, 100] },
+    { "type": "truck", "tile": [17, 100] },
+    { "type": "truck", "tile": [22, 101] }
+  ]
+}

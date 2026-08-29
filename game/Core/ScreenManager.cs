@@ -70,6 +70,7 @@ public class ScreenManager
             }
             
             _currentScreen = newScreen;
+            newScreen.OnShown();
             System.Diagnostics.Debug.WriteLine($"Changed to screen: {screenName}");
         }
         else

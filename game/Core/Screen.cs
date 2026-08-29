@@ -17,6 +17,9 @@ public abstract class Screen
     
     public abstract void LoadContent();
 
+    /// <summary>Called every time this screen becomes the current one.</summary>
+    public virtual void OnShown() { }
+
     public abstract void Update(GameTime gameTime);
 
     /// <summary>

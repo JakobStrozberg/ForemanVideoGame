@@ -43,6 +43,16 @@ public class Planter
     public int LineTiles;
     public int LastLineTile = -1;
 
+    // line-fill: plant a straight line of tiles along FillDir until a wall
+    // (boundary, cut line, road, full tiles), step over one tile along
+    // StepDir, turn around, plant back. Boustrophedon — how a piece gets
+    // filled on the job.
+    public bool HasFill;
+    public Point FillDir;
+    public Point StepDir;
+    public Point LineTile;
+    public int StepFlips;
+
     // quality: hidden meter that drifts down; low meter = faulted trees.
     // Coaching resets it (and pauses them for a moment).
     public float Quality = 100f;
@@ -131,7 +141,7 @@ public class PlanterSystem
     /// <summary>
     /// F key: every non-following planter within reach joins the line behind you.
     /// If there's no one new to grab, the crew you're leading gets released here
-    /// (they anchor and start planting).
+    /// (they anchor and start planting lines in the direction they were walking).
     /// </summary>
     public void ToggleCrew(Vector2 playerPos)
     {
@@ -145,6 +155,7 @@ public class PlanterSystem
                 p.Path = null;
                 p.PlantSpot = null;
                 p.PieceTiles = null;
+                p.HasFill = false;
                 p.RepathTimer = 0;
                 pickedAny = true;
             }
@@ -158,6 +169,7 @@ public class PlanterSystem
                 p.Anchor = p.Pos;
                 p.Path = null;
                 p.PieceTiles = FloodPiece(p.Pos);
+                InitFill(p, DirVector(p.Dir));
                 if (p.Bag > 0) PickNextSpot(p);
                 else GoBagUp(p);
             }
@@ -184,7 +196,7 @@ public class PlanterSystem
     /// <summary>
     /// Aimed line-in: the planter bags up at the cache, then marches the given
     /// bearing on their own, planting the line as they go. The line ends at
-    /// unplantable ground, MaxLineTiles, or an empty bag — then they work off it.
+    /// unplantable ground, MaxLineTiles, or an empty bag — then they fill off it.
     /// </summary>
     public void StartLineIn(Planter p, CacheEntity cache, Vector2 dir)
     {
@@ -202,6 +214,7 @@ public class PlanterSystem
         p.Path = null;
         p.PieceTiles = null;
         p.PlantSpot = null;
+        p.HasFill = false;
     }
 
     /// <summary>
@@ -284,8 +297,10 @@ public class PlanterSystem
                     bool blocked = ta.Name != "slash" && ta.Name != "cream";
                     if (blocked || p.LineTiles >= MaxLineTiles || p.Bag <= 0)
                     {
-                        // line's in — now work off it
+                        // line's in — now fill off it: lines parallel to the cut,
+                        // stepping over to the left each time they hit the wall
                         p.Anchor = (p.LineStart + p.Pos) / 2f;
+                        InitFill(p, p.LineDir);
                         if (p.Bag > 0) PickNextSpot(p);
                         else GoBagUp(p);
                     }
@@ -413,55 +428,136 @@ public class PlanterSystem
         p.RetryTimer = 2f;
     }
 
-    private void PickNextSpot(Planter p)
+    // ---------- line-fill ----------
+
+    private static Vector2 DirVector(string dir) => dir switch
+    {
+        "N" => new Vector2(0, -1),
+        "S" => new Vector2(0, 1),
+        "E" => new Vector2(1, 0),
+        _ => new Vector2(-1, 0)
+    };
+
+    /// <summary>
+    /// Start filling from where the planter stands: lines run along the
+    /// major axis of `facing`, and every step-over goes to the LEFT of that.
+    /// </summary>
+    private void InitFill(Planter p, Vector2 facing)
+    {
+        Point fill = MathF.Abs(facing.X) >= MathF.Abs(facing.Y)
+            ? new Point(facing.X >= 0 ? 1 : -1, 0)
+            : new Point(0, facing.Y >= 0 ? 1 : -1);
+        p.FillDir = fill;
+        p.StepDir = new Point(fill.Y, -fill.X); // left of the fill direction
+        p.LineTile = new Point((int)(p.Pos.X / _map.TileSize), (int)(p.Pos.Y / _map.TileHeight));
+        p.StepFlips = 0;
+        p.HasFill = true;
+    }
+
+    /// <summary>Can this planter put a tree here: in bounds, plantable ground, not a cut line, inside their piece / anchor radius.</summary>
+    private bool IsFillable(Planter p, Point t)
+    {
+        if (t.X < 0 || t.Y < 0 || t.X >= _map.Width || t.Y >= _map.Height) return false;
+        int ti = t.Y * _map.Width + t.X;
+        if (_cutLine[ti]) return false; // the cut line is a wall (a planted row)
+        var terr = _map.TerrainAtTile(t.X, t.Y);
+        if (terr.Name != "slash" && terr.Name != "cream") return false;
+        if (p.PieceTiles != null) return p.PieceTiles.Contains(ti);
+        int ax = (int)(p.Anchor.X / _map.TileSize), ay = (int)(p.Anchor.Y / _map.TileHeight);
+        return Math.Max(Math.Abs(t.X - ax), Math.Abs(t.Y - ay)) <= AnchorRadiusTiles;
+    }
+
+    private bool HasRoom(Point t) => _planted[t.Y * _map.Width + t.X] < SpotsPerTile;
+
+    /// <summary>Next tile in the line pattern: finish this tile, else advance, else step over and turn back.</summary>
+    private bool NextLineTile(Planter p, out Point tile)
+    {
+        // finish the tile we're on
+        if (IsFillable(p, p.LineTile) && HasRoom(p.LineTile)) { tile = p.LineTile; return true; }
+
+        // straight on, to the wall (boundary, cut line, road, or trees already in)
+        Point ahead = p.LineTile + p.FillDir;
+        if (IsFillable(p, ahead) && HasRoom(ahead)) { tile = ahead; return true; }
+
+        // wall: step over (up to a few tiles for gaps), then plant back the other way
+        for (int flip = 0; flip < 2; flip++)
+        {
+            for (int k = 1; k <= 4; k++)
+            {
+                Point over = new Point(p.LineTile.X + p.StepDir.X * k, p.LineTile.Y + p.StepDir.Y * k);
+                if (IsFillable(p, over) && HasRoom(over))
+                {
+                    p.FillDir = new Point(-p.FillDir.X, -p.FillDir.Y);
+                    tile = over;
+                    return true;
+                }
+            }
+            // nothing on this side of the line: work the other side once
+            if (p.StepFlips > 0) break;
+            p.StepFlips++;
+            p.StepDir = new Point(-p.StepDir.X, -p.StepDir.Y);
+        }
+        tile = default;
+        return false;
+    }
+
+    /// <summary>Anywhere left to plant for this planter (piece, or anchor radius) — restart the line pattern there.</summary>
+    private bool NearestOpenTile(Planter p, out Point tile)
     {
         int ts = _map.TileSize, th = _map.TileHeight;
-        int anchorTx = (int)(p.Anchor.X / ts), anchorTy = (int)(p.Anchor.Y / th);
         int fromTx = (int)(p.Pos.X / ts), fromTy = (int)(p.Pos.Y / th);
-
         int bestTx = -1, bestTy = -1;
         float bestD = float.MaxValue;
 
         if (p.PieceTiles != null)
         {
-            // cut-in piece: work only tiles inside the piece
             foreach (int ti in p.PieceTiles)
             {
-                if (_planted[ti] >= SpotsPerTile) continue;
                 int tx = ti % _map.Width, ty = ti / _map.Width;
+                var t = new Point(tx, ty);
+                if (!HasRoom(t) || !IsFillable(p, t)) continue;
                 float d = Vector2.DistanceSquared(new Vector2(tx, ty), new Vector2(fromTx, fromTy));
                 if (d < bestD) { bestD = d; bestTx = tx; bestTy = ty; }
             }
         }
         else
         {
-            // open planting: ring search around the planter, limited to the anchor's radius
             for (int r = 0; r <= AnchorRadiusTiles * 2 && bestTx < 0; r++)
-            {
                 for (int ty = fromTy - r; ty <= fromTy + r; ty++)
                     for (int tx = fromTx - r; tx <= fromTx + r; tx++)
                     {
                         if (Math.Max(Math.Abs(tx - fromTx), Math.Abs(ty - fromTy)) != r) continue; // ring only
-                        if (tx < 0 || ty < 0 || tx >= _map.Width || ty >= _map.Height) continue;
-                        if (Math.Max(Math.Abs(tx - anchorTx), Math.Abs(ty - anchorTy)) > AnchorRadiusTiles) continue;
-                        if (_planted[ty * _map.Width + tx] >= SpotsPerTile) continue;
-                        var t = _map.TerrainAtTile(tx, ty);
-                        if (t.Name != "slash" && t.Name != "cream") continue;
+                        var t = new Point(tx, ty);
+                        if (!IsFillable(p, t) || !HasRoom(t)) continue;
                         float d = Vector2.DistanceSquared(new Vector2(tx, ty), new Vector2(fromTx, fromTy));
                         if (d < bestD) { bestD = d; bestTx = tx; bestTy = ty; }
                     }
-            }
         }
+        tile = new Point(bestTx, bestTy);
+        return bestTx >= 0;
+    }
 
-        if (bestTx < 0)
+    private void PickNextSpot(Planter p)
+    {
+        if (!p.HasFill) InitFill(p, DirVector(p.Dir));
+
+        if (!NextLineTile(p, out Point tile))
         {
-            p.State = PlanterState.Done; // piece finished — come move me, boss
-            return;
+            // the pattern is exhausted; if any tile is still open (a pocket the
+            // lines missed), restart the pattern there, else the piece is done
+            if (!NearestOpenTile(p, out tile))
+            {
+                p.State = PlanterState.Done; // piece finished — come move me, boss
+                return;
+            }
+            p.StepFlips = 0;
         }
+        p.LineTile = tile;
 
-        int spot = _planted[bestTy * _map.Width + bestTx];
-        p.PlantSpot = SpotPos(bestTx, bestTy, spot, ts, th);
-        var target = new Vector2(bestTx * ts + ts / 2f, bestTy * th + th / 2f);
+        int ts = _map.TileSize, th = _map.TileHeight;
+        int spot = _planted[tile.Y * _map.Width + tile.X];
+        p.PlantSpot = SpotPos(tile.X, tile.Y, spot, ts, th);
+        var target = new Vector2(tile.X * ts + ts / 2f, tile.Y * th + th / 2f);
         p.Path = Pathfinder.FindPath(_map, p.Pos, target, PlanterCost);
         p.PathIdx = 0;
         p.State = p.Path != null ? PlanterState.MovingToPlant : PlanterState.Idle;
