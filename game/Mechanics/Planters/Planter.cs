@@ -43,15 +43,23 @@ public class Planter
     public int LineTiles;
     public int LastLineTile = -1;
 
-    // line-fill: plant a straight line of tiles along FillDir until a wall
-    // (boundary, cut line, road, full tiles), step over one tile along
-    // StepDir, turn around, plant back. Boustrophedon — how a piece gets
-    // filled on the job.
+    // The piece, the way it's worked on the job:
+    //   InDir    = "in" — from the front (road/cache) toward the back wall
+    //   SideDir  = which side of the cut line the piece is on (in-and-right / in-and-left)
+    //   CutStart = front tile of the cut line
+    // Back line first (along the back wall), then BACKFILL: each line one
+    // spacing toward the front, back and forth, so the back creeps toward the
+    // cache. After every bag-up, PLANT IN along the next line off the cut
+    // line (no dead walking) until you reach your back, then backfill on.
     public bool HasFill;
+    public Point InDir;
+    public Point SideDir;
+    public Point CutStart;
     public Point FillDir;
     public Point StepDir;
     public Point LineTile;
-    public int StepFlips;
+    public bool PlantingIn;
+    public int BagUps;
 
     // quality: hidden meter that drifts down; low meter = faulted trees.
     // Coaching resets it (and pauses them for a moment).
@@ -140,8 +148,9 @@ public class PlanterSystem
 
     /// <summary>
     /// F key: every non-following planter within reach joins the line behind you.
-    /// If there's no one new to grab, the crew you're leading gets released here
-    /// (they anchor and start planting lines in the direction they were walking).
+    /// If there's no one new to grab, the crew you're leading gets released here:
+    /// they plant IN from this spot in the direction they were walking (that
+    /// line is their cut line), then work the piece off it.
     /// </summary>
     public void ToggleCrew(Vector2 playerPos)
     {
@@ -162,14 +171,12 @@ public class PlanterSystem
         }
         if (pickedAny) return;
 
-        // release the crew: each planter gets the piece enclosing where they stand
         foreach (var p in Planters)
             if (p.State == PlanterState.Following)
             {
                 p.Anchor = p.Pos;
                 p.Path = null;
-                p.PieceTiles = FloodPiece(p.Pos);
-                InitFill(p, DirVector(p.Dir));
+                InitPiece(p, DirVector(p.Dir), TileOf(p.Pos), TileOf(p.Pos), plantInFirst: true);
                 if (p.Bag > 0) PickNextSpot(p);
                 else GoBagUp(p);
             }
@@ -195,8 +202,8 @@ public class PlanterSystem
 
     /// <summary>
     /// Aimed line-in: the planter bags up at the cache, then marches the given
-    /// bearing on their own, planting the line as they go. The line ends at
-    /// unplantable ground, MaxLineTiles, or an empty bag — then they fill off it.
+    /// bearing on their own, planting the cut line as they go. The line ends at
+    /// unplantable ground, MaxLineTiles, or an empty bag — then they work the piece.
     /// </summary>
     public void StartLineIn(Planter p, CacheEntity cache, Vector2 dir)
     {
@@ -218,23 +225,22 @@ public class PlanterSystem
     }
 
     /// <summary>
-    /// The piece enclosing a point: flood fill over plantable ground bounded by
+    /// The piece enclosing a tile: flood fill over plantable ground bounded by
     /// cut lines, roads, forest, swamp, rock. Returns null when the region is
     /// open-ended (bigger than PieceCapTiles) or the start isn't plantable —
     /// the planter then falls back to open radius planting.
     /// </summary>
-    private HashSet<int> FloodPiece(Vector2 pos)
+    private HashSet<int> FloodPiece(Point start)
     {
         int w = _map.Width, h = _map.Height;
-        int sx = Math.Clamp((int)(pos.X / _map.TileSize), 0, w - 1);
-        int sy = Math.Clamp((int)(pos.Y / _map.TileHeight), 0, h - 1);
+        int sx = Math.Clamp(start.X, 0, w - 1), sy = Math.Clamp(start.Y, 0, h - 1);
         if (!IsPieceGround(sx, sy)) return null;
 
         var piece = new HashSet<int>();
         var queue = new Queue<int>();
-        int start = sy * w + sx;
-        piece.Add(start);
-        queue.Enqueue(start);
+        int first = sy * w + sx;
+        piece.Add(first);
+        queue.Enqueue(first);
 
         while (queue.Count > 0)
         {
@@ -288,7 +294,7 @@ public class PlanterSystem
 
                 case PlanterState.CuttingIn:
                 {
-                    // march the aimed bearing, planting the line
+                    // march the aimed bearing, planting the cut line
                     StepToward(p, p.Pos + p.LineDir * 12f, dt);
                     MarkCutLine(p);
 
@@ -297,10 +303,9 @@ public class PlanterSystem
                     bool blocked = ta.Name != "slash" && ta.Name != "cream";
                     if (blocked || p.LineTiles >= MaxLineTiles || p.Bag <= 0)
                     {
-                        // line's in — now fill off it: lines parallel to the cut,
-                        // stepping over to the left each time they hit the wall
+                        // the cut's in. Back line along the wall, then backfill.
                         p.Anchor = (p.LineStart + p.Pos) / 2f;
-                        InitFill(p, p.LineDir);
+                        InitPiece(p, p.LineDir, TileOf(p.LineStart), TileOf(p.Pos), plantInFirst: false);
                         if (p.Bag > 0) PickNextSpot(p);
                         else GoBagUp(p);
                     }
@@ -340,6 +345,7 @@ public class PlanterSystem
                         {
                             cache.Boxes--;
                             p.Bag = BagSize;
+                            StartPlantIn(p); // never dead-walk: plant in along the next line off the cut
                             PickNextSpot(p);
                         }
                         else GoBagUp(p); // it drained while we walked
@@ -428,7 +434,9 @@ public class PlanterSystem
         p.RetryTimer = 2f;
     }
 
-    // ---------- line-fill ----------
+    // ---------- the piece ----------
+
+    private Point TileOf(Vector2 pos) => new((int)(pos.X / _map.TileSize), (int)(pos.Y / _map.TileHeight));
 
     private static Vector2 DirVector(string dir) => dir switch
     {
@@ -438,30 +446,94 @@ public class PlanterSystem
         _ => new Vector2(-1, 0)
     };
 
+    private static Point Axis(Vector2 v) => MathF.Abs(v.X) >= MathF.Abs(v.Y)
+        ? new Point(v.X >= 0 ? 1 : -1, 0)
+        : new Point(0, v.Y >= 0 ? 1 : -1);
+
     /// <summary>
-    /// Start filling from where the planter stands: lines run along the
-    /// major axis of `facing`, and every step-over goes to the LEFT of that.
+    /// Set up the piece off a cut line running from cutStart to cutEnd along
+    /// `inward`. Side = whichever side of the cut has more open ground
+    /// ("in and right" / "in and left"). Line-in planters start their back
+    /// line at the wall; released followers plant IN first (that line is
+    /// their cut), then back-line and backfill.
     /// </summary>
-    private void InitFill(Planter p, Vector2 facing)
+    private void InitPiece(Planter p, Vector2 inward, Point cutStart, Point cutEnd, bool plantInFirst)
     {
-        Point fill = MathF.Abs(facing.X) >= MathF.Abs(facing.Y)
-            ? new Point(facing.X >= 0 ? 1 : -1, 0)
-            : new Point(0, facing.Y >= 0 ? 1 : -1);
-        p.FillDir = fill;
-        p.StepDir = new Point(fill.Y, -fill.X); // left of the fill direction
-        p.LineTile = new Point((int)(p.Pos.X / _map.TileSize), (int)(p.Pos.Y / _map.TileHeight));
-        p.StepFlips = 0;
+        p.InDir = Axis(inward);
+        p.CutStart = cutStart;
+        p.BagUps = 0;
         p.HasFill = true;
+
+        Point right = new(-p.InDir.Y, p.InDir.X); // right of "in" (screen y is down)
+        Point left = new(p.InDir.Y, -p.InDir.X);
+        p.SideDir = OpenGround(p, cutEnd, right) >= OpenGround(p, cutEnd, left) ? right : left;
+
+        // the piece is the enclosed region beside the cut (null = open ground)
+        p.PieceTiles = FloodPiece(cutEnd + p.SideDir) ?? FloodPiece(cutStart + p.SideDir);
+
+        if (plantInFirst)
+        {
+            p.PlantingIn = true;
+            p.FillDir = p.InDir;
+            p.LineTile = cutStart;
+        }
+        else
+        {
+            // back line: along the wall, starting beside the cut's end
+            p.PlantingIn = false;
+            p.FillDir = p.SideDir;
+            p.LineTile = cutEnd + p.SideDir;
+        }
+        p.StepDir = new Point(-p.InDir.X, -p.InDir.Y); // every step-over is one line toward the front
     }
 
-    /// <summary>Can this planter put a tree here: in bounds, plantable ground, not a cut line, inside their piece / anchor radius.</summary>
-    private bool IsFillable(Planter p, Point t)
+    /// <summary>How much plantable ground sits on one side of a tile (5-deep probe, 6 wide).</summary>
+    private int OpenGround(Planter p, Point at, Point side)
+    {
+        int n = 0;
+        Point along = new(side.Y, side.X); // perpendicular to side (the "in" axis)
+        for (int k = 1; k <= 5; k++)
+            for (int j = -3; j <= 3; j++)
+            {
+                var t = new Point(at.X + side.X * k + along.X * j, at.Y + side.Y * k + along.Y * j);
+                if (IsGround(t) && !IsCut(t)) n++;
+            }
+        return n;
+    }
+
+    /// <summary>Bag's full again at the cache: plant in along the next line off the cut line.</summary>
+    private void StartPlantIn(Planter p)
+    {
+        if (!p.HasFill) return;
+        p.BagUps++;
+        var start = new Point(p.CutStart.X + p.SideDir.X * p.BagUps, p.CutStart.Y + p.SideDir.Y * p.BagUps);
+        if (IsFillable(p, start) && HasRoom(start))
+        {
+            p.PlantingIn = true;
+            p.FillDir = p.InDir;
+            p.LineTile = start;
+        }
+        else
+        {
+            p.PlantingIn = false; // that line's already in — resume the backfill from wherever it stands
+            p.FillDir = p.SideDir;
+        }
+    }
+
+    private bool IsGround(Point t)
     {
         if (t.X < 0 || t.Y < 0 || t.X >= _map.Width || t.Y >= _map.Height) return false;
-        int ti = t.Y * _map.Width + t.X;
-        if (_cutLine[ti]) return false; // the cut line is a wall (a planted row)
         var terr = _map.TerrainAtTile(t.X, t.Y);
-        if (terr.Name != "slash" && terr.Name != "cream") return false;
+        return terr.Name == "slash" || terr.Name == "cream";
+    }
+
+    private bool IsCut(Point t) => _cutLine[t.Y * _map.Width + t.X];
+
+    /// <summary>Can this planter put a tree here: plantable ground, not a cut line, inside their piece / anchor radius.</summary>
+    private bool IsFillable(Planter p, Point t)
+    {
+        if (!IsGround(t) || IsCut(t)) return false; // cut lines are walls: planted rows
+        int ti = t.Y * _map.Width + t.X;
         if (p.PieceTiles != null) return p.PieceTiles.Contains(ti);
         int ax = (int)(p.Anchor.X / _map.TileSize), ay = (int)(p.Anchor.Y / _map.TileHeight);
         return Math.Max(Math.Abs(t.X - ax), Math.Abs(t.Y - ay)) <= AnchorRadiusTiles;
@@ -469,39 +541,45 @@ public class PlanterSystem
 
     private bool HasRoom(Point t) => _planted[t.Y * _map.Width + t.X] < SpotsPerTile;
 
-    /// <summary>Next tile in the line pattern: finish this tile, else advance, else step over and turn back.</summary>
+    private bool Open(Planter p, Point t) => IsFillable(p, t) && HasRoom(t);
+
+    /// <summary>
+    /// Next tile in the pattern. Planting in: straight along InDir until the
+    /// back (trees already in, or a wall). Backfill: along FillDir to the
+    /// wall, then one line toward the front and back the other way.
+    /// </summary>
     private bool NextLineTile(Planter p, out Point tile)
     {
-        // finish the tile we're on
-        if (IsFillable(p, p.LineTile) && HasRoom(p.LineTile)) { tile = p.LineTile; return true; }
+        if (Open(p, p.LineTile)) { tile = p.LineTile; return true; } // finish this tile
 
-        // straight on, to the wall (boundary, cut line, road, or trees already in)
-        Point ahead = p.LineTile + p.FillDir;
-        if (IsFillable(p, ahead) && HasRoom(ahead)) { tile = ahead; return true; }
-
-        // wall: step over (up to a few tiles for gaps), then plant back the other way
-        for (int flip = 0; flip < 2; flip++)
+        if (p.PlantingIn)
         {
-            for (int k = 1; k <= 4; k++)
+            Point ahead = p.LineTile + p.InDir;
+            if (Open(p, ahead)) { tile = ahead; return true; }
+            // reached the back: carry on backfilling from here, away from the cut
+            p.PlantingIn = false;
+            p.FillDir = p.SideDir;
+        }
+
+        Point next = p.LineTile + p.FillDir;
+        if (Open(p, next)) { tile = next; return true; }
+
+        // wall: step toward the front (skipping a small gap), turn around
+        for (int k = 1; k <= 3; k++)
+        {
+            var over = new Point(p.LineTile.X + p.StepDir.X * k, p.LineTile.Y + p.StepDir.Y * k);
+            if (Open(p, over))
             {
-                Point over = new Point(p.LineTile.X + p.StepDir.X * k, p.LineTile.Y + p.StepDir.Y * k);
-                if (IsFillable(p, over) && HasRoom(over))
-                {
-                    p.FillDir = new Point(-p.FillDir.X, -p.FillDir.Y);
-                    tile = over;
-                    return true;
-                }
+                p.FillDir = new Point(-p.FillDir.X, -p.FillDir.Y);
+                tile = over;
+                return true;
             }
-            // nothing on this side of the line: work the other side once
-            if (p.StepFlips > 0) break;
-            p.StepFlips++;
-            p.StepDir = new Point(-p.StepDir.X, -p.StepDir.Y);
         }
         tile = default;
         return false;
     }
 
-    /// <summary>Anywhere left to plant for this planter (piece, or anchor radius) — restart the line pattern there.</summary>
+    /// <summary>Anything left to plant for this planter (piece, or anchor radius)? Restart the pattern there.</summary>
     private bool NearestOpenTile(Planter p, out Point tile)
     {
         int ts = _map.TileSize, th = _map.TileHeight;
@@ -513,11 +591,10 @@ public class PlanterSystem
         {
             foreach (int ti in p.PieceTiles)
             {
-                int tx = ti % _map.Width, ty = ti / _map.Width;
-                var t = new Point(tx, ty);
-                if (!HasRoom(t) || !IsFillable(p, t)) continue;
-                float d = Vector2.DistanceSquared(new Vector2(tx, ty), new Vector2(fromTx, fromTy));
-                if (d < bestD) { bestD = d; bestTx = tx; bestTy = ty; }
+                var t = new Point(ti % _map.Width, ti / _map.Width);
+                if (!Open(p, t)) continue;
+                float d = Vector2.DistanceSquared(new Vector2(t.X, t.Y), new Vector2(fromTx, fromTy));
+                if (d < bestD) { bestD = d; bestTx = t.X; bestTy = t.Y; }
             }
         }
         else
@@ -528,7 +605,7 @@ public class PlanterSystem
                     {
                         if (Math.Max(Math.Abs(tx - fromTx), Math.Abs(ty - fromTy)) != r) continue; // ring only
                         var t = new Point(tx, ty);
-                        if (!IsFillable(p, t) || !HasRoom(t)) continue;
+                        if (!Open(p, t)) continue;
                         float d = Vector2.DistanceSquared(new Vector2(tx, ty), new Vector2(fromTx, fromTy));
                         if (d < bestD) { bestD = d; bestTx = tx; bestTy = ty; }
                     }
@@ -539,18 +616,18 @@ public class PlanterSystem
 
     private void PickNextSpot(Planter p)
     {
-        if (!p.HasFill) InitFill(p, DirVector(p.Dir));
+        if (!p.HasFill) InitPiece(p, DirVector(p.Dir), TileOf(p.Pos), TileOf(p.Pos), plantInFirst: true);
 
         if (!NextLineTile(p, out Point tile))
         {
-            // the pattern is exhausted; if any tile is still open (a pocket the
-            // lines missed), restart the pattern there, else the piece is done
+            // pattern exhausted; sweep any pocket the lines missed, else the piece is done
             if (!NearestOpenTile(p, out tile))
             {
                 p.State = PlanterState.Done; // piece finished — come move me, boss
                 return;
             }
-            p.StepFlips = 0;
+            p.PlantingIn = false;
+            p.FillDir = p.SideDir;
         }
         p.LineTile = tile;
 
