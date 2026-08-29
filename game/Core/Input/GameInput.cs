@@ -55,6 +55,7 @@ public sealed class GameInput
     public bool Crew => Pressed(Keys.F);
     public bool LineIn => Pressed(Keys.C);
     public bool Coach => Pressed(Keys.T);
+    public bool DropFlag => Pressed(Keys.G);
 
     // ---- line-in aiming ----
     public bool AimLeft => Down(Keys.A, Keys.Left);

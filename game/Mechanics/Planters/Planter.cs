@@ -119,6 +119,13 @@ public class PlanterSystem
     private readonly Dictionary<int, Piece> _byId = new();
     private int _nextPieceId = 1;
 
+    // flag lines: tape run flag to flag by the crewboss — walls with no trees
+    private readonly HashSet<int> _flagTiles = new();
+    private readonly List<Point> _openLine = new();   // flags of the line being run
+    public readonly List<Point> Flags = new();        // every flag dropped (render)
+    public readonly List<(Point a, Point b)> FlagSegments = new();
+    public const int NewLineDistance = 40;            // tiles: farther than this starts a fresh line
+
     private static readonly string[] CrewNames = { "Maya", "Cole", "Jess", "Theo" };
 
     public PlanterSystem(TileMap map, List<CacheEntity> caches)
@@ -152,6 +159,9 @@ public class PlanterSystem
         InBounds(tx, ty) && (_faultBits[ty * _map.Width + tx] & (1 << spot)) != 0;
 
     public bool IsCutLine(int tx, int ty) => InBounds(tx, ty) && _wall[ty * _map.Width + tx];
+    public bool IsFlagLine(int tx, int ty) => InBounds(tx, ty) && _flagTiles.Contains(ty * _map.Width + tx);
+    /// <summary>Where the line being run currently ends (null when no line is open).</summary>
+    public Point? OpenLineEnd => _openLine.Count > 0 ? _openLine[^1] : null;
 
     public byte PlantedAtTile(int tx, int ty) => InBounds(tx, ty) ? _planted[ty * _map.Width + tx] : (byte)0;
 
@@ -311,6 +321,83 @@ public class PlanterSystem
     private static Point Axis(Vector2 v) => MathF.Abs(v.X) >= MathF.Abs(v.Y)
         ? new Point(v.X >= 0 ? 1 : -1, 0)
         : new Point(0, v.Y >= 0 ? 1 : -1);
+
+    // ---------- flag lines ----------
+
+    /// <summary>
+    /// G: drop a flag. The first flag starts a line; each next flag runs tape
+    /// straight from the last one — a wall for pieces, no trees. Landing on a
+    /// boundary or another line closes the line (and splits the pieces it
+    /// crossed); the next flag starts fresh. A flag far from the last one
+    /// starts a new line instead of an accidental wall.
+    /// </summary>
+    public void DropFlag(Vector2 worldPos)
+    {
+        var t = TileOf(worldPos);
+        if (!InBounds(t.X, t.Y)) return;
+
+        if (_openLine.Count > 0 && Math.Max(Math.Abs(t.X - _openLine[^1].X), Math.Abs(t.Y - _openLine[^1].Y)) > NewLineDistance)
+            _openLine.Clear();
+
+        if (_openLine.Count == 0)
+        {
+            _openLine.Add(t);
+            Flags.Add(t);
+            // a first flag dropped on ground is itself a wall tile
+            if (IsGround(t) && !_wall[Index(t)]) WallTile(t, null);
+            return;
+        }
+
+        var a = _openLine[^1];
+        if (a == t) return;
+        bool closes = !IsGround(t) || _wall[Index(t)];
+
+        var touched = new HashSet<Piece>();
+        foreach (var tile in Raster(a, t))
+        {
+            if (!IsGround(tile) || _wall[Index(tile)]) continue;
+            WallTile(tile, touched);
+        }
+        foreach (var pc in touched)
+            if (Pieces.Contains(pc)) SplitPiece(pc, null);
+
+        FlagSegments.Add((a, t));
+        Flags.Add(t);
+        if (closes) _openLine.Clear();
+        else _openLine.Add(t);
+    }
+
+    private void WallTile(Point tile, HashSet<Piece> touched)
+    {
+        int ti = Index(tile);
+        var pc = PieceAt(tile.X, tile.Y);
+        _wall[ti] = true;
+        _flagTiles.Add(ti);
+        if (pc != null)
+        {
+            pc.Tiles.Remove(ti);
+            _pieceId[ti] = 0;
+            touched?.Add(pc);
+            if (touched == null) SplitPiece(pc, null);
+        }
+    }
+
+    /// <summary>Tiles on the straight segment a-b (Bresenham).</summary>
+    private static IEnumerable<Point> Raster(Point a, Point b)
+    {
+        int dx = Math.Abs(b.X - a.X), sx = a.X < b.X ? 1 : -1;
+        int dy = -Math.Abs(b.Y - a.Y), sy = a.Y < b.Y ? 1 : -1;
+        int err = dx + dy;
+        int x = a.X, y = a.Y;
+        while (true)
+        {
+            yield return new Point(x, y);
+            if (x == b.X && y == b.Y) yield break;
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x += sx; }
+            if (e2 <= dx) { err += dx; y += sy; }
+        }
+    }
 
     // ---------- crew commands ----------
 

@@ -103,6 +103,7 @@ public sealed class Hud
             ("C", "CUT IN FROM A CACHE"),
             ("T", "COACH A PLANTER"),
             ("TAB", "CUT IN AND RIGHT / LEFT"),
+            ("G", "DROP FLAG - FLAGS RUN A LINE"),
             ("", "GAME"),
             ("ESC", "PAUSE"),
             ("F3", "DEV VIEW"),

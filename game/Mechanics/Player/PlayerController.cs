@@ -124,6 +124,7 @@ public sealed class PlayerController
         if (input.BoxAction) DoBoxAction();
         if (input.Crew) Planters?.ToggleCrew(Pos, CutRight);
         if (input.LineIn) TryStartAiming();
+        if (input.DropFlag) Planters?.DropFlag(Pos);
         if (input.Coach && !Mounted && Planters != null)
         {
             var target = Planters.FindCoachTarget(Pos);

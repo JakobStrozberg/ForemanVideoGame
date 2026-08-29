@@ -59,6 +59,7 @@ public sealed class WorldRenderer
         DrawSeedlings(sb);
         DrawWorldSprites(sb);
         _effects.DrawDust(sb, _cam, _map);
+        DrawFlagLines(sb);
         DrawPrompts(sb);
         if (_player.Aiming) DrawAimArrow(sb);
     }
@@ -260,6 +261,44 @@ public sealed class WorldRenderer
             }
     }
 
+    // ---------- flag lines ----------
+
+    private Vector2 TileCenter(Point t) =>
+        new(t.X * _map.Tiles.TileSize + _map.Tiles.TileSize / 2f, t.Y * _map.Tiles.TileHeight + _map.Tiles.TileHeight / 2f);
+
+    /// <summary>Flagging tape: a stake with a tag at every flag, ties along each run, and the open line back to the crewboss.</summary>
+    private void DrawFlagLines(SpriteBatch sb)
+    {
+        if (Planters == null || _map.Tiles == null) return;
+        var stake = _art.Solid("flagStake", new Color(70, 50, 30));
+        var tape = _art.Solid("flagTape", new Color(255, 110, 40));
+        var px = _art.Solid("dbgPx", Color.White);
+
+        foreach (var (a, b) in Planters.FlagSegments)
+        {
+            Vector2 sa = W2S(TileCenter(a)), sb2 = W2S(TileCenter(b));
+            // ties every ~40px along the run
+            float len = Vector2.Distance(sa, sb2);
+            int ties = Math.Max(1, (int)(len / 40f));
+            for (int i = 1; i < ties; i++)
+            {
+                Vector2 q = Vector2.Lerp(sa, sb2, i / (float)ties);
+                sb.Draw(tape, new Rectangle((int)q.X - 2, (int)q.Y - 5, 4, 3), Color.White);
+            }
+            // the tape itself: a thin faint line so pieces read at a glance
+            Line(sb, px, sa, sb2, new Color(255, 140, 60) * 0.35f);
+        }
+        foreach (var f in Planters.Flags)
+        {
+            Vector2 q = W2S(TileCenter(f));
+            sb.Draw(stake, new Rectangle((int)q.X - 1, (int)q.Y - 12, 2, 12), Color.White);
+            sb.Draw(tape, new Rectangle((int)q.X - 1, (int)q.Y - 12, 6, 4), Color.White);
+        }
+        // where the next flag would run the tape from
+        if (Planters.OpenLineEnd is Point open)
+            Line(sb, px, W2S(TileCenter(open)), W2S(_player.Pos), new Color(255, 140, 60) * 0.5f);
+    }
+
     // ---------- dev view ----------
 
     private static readonly Color[] CrewColors =
@@ -340,10 +379,10 @@ public sealed class WorldRenderer
                     sb.Draw(px, new Rectangle(r.X + r.Width / 2 - 2 + s * 5, r.Y + r.Height / 2 - 2, 4, 4),
                         bad ? new Color(230, 60, 50) : new Color(90, 230, 110));
                 }
-                // cut line: orange frame
+                // cut line: orange frame; flag line: white frame
                 if (Planters != null && Planters.IsCutLine(tx, ty))
                 {
-                    var oc = new Color(255, 150, 40) * 0.9f;
+                    var oc = Planters.IsFlagLine(tx, ty) ? Color.White * 0.9f : new Color(255, 150, 40) * 0.9f;
                     sb.Draw(px, new Rectangle(r.X, r.Y, r.Width, 2), oc);
                     sb.Draw(px, new Rectangle(r.X, r.Bottom - 2, r.Width, 2), oc);
                     sb.Draw(px, new Rectangle(r.X, r.Y, 2, r.Height), oc);
