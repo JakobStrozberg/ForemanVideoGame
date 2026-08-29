@@ -405,13 +405,15 @@ public static class Compositor
 
         // debris obstacles: fallen logs + stumps scattered on slash, off the roads.
         // Same {trees:[[x,y,v]]} shape so the game reuses the TreeLayer loader.
+        // densities are per AREA, not per tile: a finer tile grid must not mean more logs
+        float tileArea = ts * th / (32f * 22f);
         var debris = new List<(int x, int y, int v)>();
         for (int tyy = 0; tyy < def.Height; tyy++)
             for (int txx = 0; txx < def.Width; txx++)
             {
                 if (grid[tyy, txx] != SLASH) continue;
                 float roll = Noise.Hash(txx, tyy, def.Seed + 500);
-                if (roll > 0.16f) continue;
+                if (roll > 0.16f * tileArea) continue;
                 float px = txx * ts + ts / 2f + (Noise.Hash(txx, tyy, def.Seed + 501) - 0.5f) * ts * 0.8f;
                 float py = tyy * th + th / 2f + (Noise.Hash(txx, tyy, def.Seed + 502) - 0.5f) * th * 0.8f;
                 if (RoadPath.NearAny(roadPaths, px, py, 30)) continue;
@@ -428,7 +430,7 @@ public static class Compositor
             for (int txx = 0; txx < def.Width; txx++)
             {
                 char gch = grid[tyy, txx];
-                float density = gch switch { 'S' => 0.40f, 'C' => 0.55f, 'W' => 0.30f, _ => 0f };
+                float density = gch switch { 'S' => 0.40f, 'C' => 0.55f, 'W' => 0.30f, _ => 0f } * tileArea;
                 if (density <= 0) continue;
                 for (int k = 0; k < 2; k++)
                 {

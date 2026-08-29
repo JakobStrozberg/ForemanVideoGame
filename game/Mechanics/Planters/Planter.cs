@@ -80,11 +80,11 @@ public class PlanterSystem
     public const float PlantTime = 1.4f;  // seconds per tree
     public const float WalkSpeed = 78f;
     public const float FollowSpeed = 135f; // hustling behind the boss
-    public const int SpotsPerTile = 4;    // 2x2 spots per plantable tile
-    public const int AnchorRadiusTiles = 14;
+    public const int SpotsPerTile = 1;    // one tree per 16x11 tile: lines 16px apart
+    public const int AnchorRadiusTiles = 28;
 
-    public const int PieceCapTiles = 800; // bigger than this = not really "cut in"
-    public const int MaxLineTiles = 45;   // a line-in ends eventually even on open ground
+    public const int PieceCapTiles = 3200; // bigger than this = not really "cut in"
+    public const int MaxLineTiles = 90;    // a line-in ends eventually even on open ground
 
     public readonly List<Planter> Planters = new();
     public int TreesPlanted { get; private set; }
@@ -388,7 +388,7 @@ public class PlanterSystem
         _cutLine[ti] = true;
         p.LineTiles++;
 
-        while (_planted[ti] < 2 && p.Bag > 0)
+        while (_planted[ti] < SpotsPerTile && p.Bag > 0)
         {
             RollFault(p, ti, _planted[ti]);
             _planted[ti]++;
@@ -651,17 +651,14 @@ public class PlanterSystem
         }
     }
 
-    /// <summary>Deterministic sub-tile position for spot index 0..3 (2x2 + jitter).</summary>
+    /// <summary>Deterministic planting position in a tile: the center, jittered so lines look hand-planted.</summary>
     public static Vector2 SpotPos(int tx, int ty, int spot, int ts, int th)
     {
-        int qx = spot % 2, qy = spot / 2;
         uint h = (uint)(tx * 7349 + ty * 9241 + spot * 131);
         h = (h ^ (h >> 13)) * 1274126177u;
-        float jx = (h & 0xFF) / 255f * 6f - 3f;
-        float jy = ((h >> 8) & 0xFF) / 255f * 4f - 2f;
-        return new Vector2(
-            tx * ts + ts / 4f + qx * ts / 2f + jx,
-            ty * th + th / 4f + qy * th / 2f + jy);
+        float jx = (h & 0xFF) / 255f * 5f - 2.5f;
+        float jy = ((h >> 8) & 0xFF) / 255f * 3f - 1.5f;
+        return new Vector2(tx * ts + ts / 2f + jx, ty * th + th / 2f + jy);
     }
 
     // ---------- movement ----------

@@ -49,8 +49,8 @@ Everything is seeded — same block JSON in, identical map out. Change `seed`, g
 ```jsonc
 {
   "name": "Block1",
-  "tileSize": 32,
-  "width": 80, "height": 86,      // tiles (tiles bake 32 wide x 22 tall — 3/4 view)
+  "tileSize": 16,
+  "width": 160, "height": 172,    // tiles (16 wide x 11 tall — 3/4 view; one tree per tile)
   "seed": 7,
   "pixelSize": 1,                 // pixel-grid unify factor (1 = full detail)
   "hilliness": 1.0,               // 0 = billiard table, 1 = full zoned relief

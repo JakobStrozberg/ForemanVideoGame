@@ -335,7 +335,7 @@ public sealed class WorldRenderer
                 for (int s = 0; s < n; s++)
                 {
                     bool bad = Planters.IsFault(tx, ty, s);
-                    sb.Draw(px, new Rectangle(r.X + 4 + (s % 2) * 12, r.Y + 3 + (s / 2) * 8, 4, 4),
+                    sb.Draw(px, new Rectangle(r.X + r.Width / 2 - 2 + s * 5, r.Y + r.Height / 2 - 2, 4, 4),
                         bad ? new Color(230, 60, 50) : new Color(90, 230, 110));
                 }
                 // cut line: orange frame

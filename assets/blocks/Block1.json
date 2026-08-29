@@ -1,22 +1,96 @@
 {
   "name": "Block1",
-  "tileSize": 32,
-  "width": 56,
-  "height": 60,
+  "tileSize": 16,
+  "width": 112,
+  "height": 120,
   "seed": 3,
   "pixelSize": 1,
   "hilliness": 0.3,
-  "boundary": { "centerTile": [28, 26], "extentTiles": [22, 19], "roughness": 0.10 },
+  "boundary": {
+    "centerTile": [
+      56,
+      52
+    ],
+    "extentTiles": [
+      44,
+      38
+    ],
+    "roughness": 0.1
+  },
   "landRegions": [
-    { "type": "cream", "x": 8, "y": 28, "w": 12, "h": 10 }
+    {
+      "type": "cream",
+      "x": 16,
+      "y": 56,
+      "w": 24,
+      "h": 20
+    }
   ],
   "leavePatches": [],
   "roads": [
-    { "kind": "fsr", "width": 1.5, "points": [[0, 52], [14, 53], [30, 51], [44, 53], [55, 52]] },
-    { "kind": "block", "width": 1, "points": [[28, 52], [27, 40], [29, 28], [28, 14]] }
+    {
+      "kind": "fsr",
+      "width": 3.0,
+      "points": [
+        [
+          0,
+          104
+        ],
+        [
+          28,
+          106
+        ],
+        [
+          60,
+          102
+        ],
+        [
+          88,
+          106
+        ],
+        [
+          110,
+          104
+        ]
+      ]
+    },
+    {
+      "kind": "block",
+      "width": 2,
+      "points": [
+        [
+          56,
+          104
+        ],
+        [
+          54,
+          80
+        ],
+        [
+          58,
+          56
+        ],
+        [
+          56,
+          28
+        ]
+      ]
+    }
   ],
   "props": [
-    { "type": "truck", "tile": [10, 52] },
-    { "type": "truck", "tile": [15, 52] }
+    {
+      "type": "truck",
+      "tile": [
+        20,
+        104
+      ]
+    },
+    {
+      "type": "truck",
+      "tile": [
+        30,
+        104
+      ]
+    }
   ]
 }

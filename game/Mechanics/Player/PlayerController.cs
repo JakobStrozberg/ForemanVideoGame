@@ -194,8 +194,8 @@ public sealed class PlayerController
 
         int ts = _map.Tiles.TileSize, th = _map.Tiles.TileHeight;
         int ptx = (int)(FootPos.X / ts), pty = (int)(FootPos.Y / th);
-        for (int ty = pty - 2; ty <= pty + 2; ty++)
-            for (int tx = ptx - 2; tx <= ptx + 2; tx++)
+        for (int ty = pty - 4; ty <= pty + 4; ty++)
+            for (int tx = ptx - 4; tx <= ptx + 4; tx++)
             {
                 int count = Planters.PlantedAtTile(tx, ty);
                 for (int s = 0; s < count; s++)
