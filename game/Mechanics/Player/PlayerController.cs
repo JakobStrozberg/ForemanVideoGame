@@ -25,6 +25,14 @@ public sealed class PlayerController
     public Vector2 FootPos;
     public string FootDir { get; private set; } = "S";
     public float WalkAnim { get; private set; }
+    /// <summary>World px actually walked; drives the boot animation and footstep sounds together.</summary>
+    public float WalkDist { get; private set; }
+    /// <summary>World px per footfall (foot speed 62 px/s ≈ 2 steps/s).</summary>
+    public const float StrideLength = 30f;
+    /// <summary>Footfalls so far — the contact frame lands exactly when this ticks.</summary>
+    public int StepCount => (int)(WalkDist / StrideLength);
+    /// <summary>Walk-cycle frame: contact, pass, contact, pass — one contact per stride.</summary>
+    public int WalkFrame => (int)(WalkDist / StrideLength * 2f) % GameArt.WalkFrames;
     public bool Walking { get; private set; }
     public bool CarryingBox { get; private set; }
     /// <summary>Cut-in side for the next line-in or release: in-and-right (true) or in-and-left.</summary>
@@ -90,10 +98,9 @@ public sealed class PlayerController
         }
     }
 
-    /// <summary>C at a cache: enter aim mode if there's a cache and a planter to line in.</summary>
-    private void TryStartAiming()
+    /// <summary>Nearest cache within reach, or null.</summary>
+    public CacheEntity NearbyCache()
     {
-        if (Planters == null) return;
         CacheEntity cache = null;
         float bestD = 70f;
         foreach (var c in _caches)
@@ -101,7 +108,25 @@ public sealed class PlayerController
             float d = Vector2.Distance(Pos, c.Pos);
             if (d < bestD) { bestD = d; cache = c; }
         }
-        if (cache == null) return;
+        return cache;
+    }
+
+    /// <summary>True when C would put the following crew on the piece you stand in.</summary>
+    public bool CanAssignHere => Planters != null && Planters.HasFollowers && NearbyCache() == null && Planters.PieceAt(Pos) != null;
+
+    /// <summary>
+    /// C: at a cache, aim a cut-in. Inside a piece with a crew following,
+    /// put them on this piece instead.
+    /// </summary>
+    private void TryStartAiming()
+    {
+        if (Planters == null) return;
+        var cache = NearbyCache();
+        if (cache == null)
+        {
+            if (Planters.HasFollowers) Planters.AssignFollowersHere(Pos, CutRight);
+            return;
+        }
 
         var planter = Planters.FindLinePlanter(cache.Pos);
         if (planter == null) return;
@@ -160,11 +185,13 @@ public sealed class PlayerController
             : (dir.Y >= 0 ? "S" : "N");
         WalkAnim += dt;
 
+        Vector2 before = FootPos;
         Vector2 delta = dir * Tweaks.FootSpeed * FootSpeedMult(FootPos) * dt;
         Vector2 tryX = FootPos + new Vector2(delta.X, 0);
         if (FootSpeedMult(tryX) > 0) FootPos.X = tryX.X;
         Vector2 tryY = FootPos + new Vector2(0, delta.Y);
         if (FootSpeedMult(tryY) > 0) FootPos.Y = tryY.Y;
+        WalkDist += Vector2.Distance(before, FootPos);
 
         FootPos.X = MathHelper.Clamp(FootPos.X, 0, _map.Bounds.Width);
         FootPos.Y = MathHelper.Clamp(FootPos.Y, 0, _map.Bounds.Height);

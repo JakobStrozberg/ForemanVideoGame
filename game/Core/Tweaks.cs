@@ -16,6 +16,7 @@ public static class Tweaks
     public static float TreeScale = 2.0f;          // tree sprite size multiplier
     public static float FootSpeed = 62f;
     public static float ShiftTime = 1.5f;
+    public static float TurnRate = 0.6f;           // steering speed multiplier (1 = original)
     public static float DustMinSpeed = 210f;
     public static float[] GearMax = { 95, 95, 150, 205, 280, 380 };
     public static float[] GearAccel = { 300, 320, 250, 240, 190, 165 };
@@ -69,6 +70,7 @@ public static class Tweaks
             TreeScale = F("treeScale", TreeScale);
             FootSpeed = F("footSpeed", FootSpeed);
             ShiftTime = F("shiftTime", ShiftTime);
+            TurnRate = F("turnRate", TurnRate);
             DustMinSpeed = F("dustMinSpeed", DustMinSpeed);
             GearMax = A("gearMax", GearMax);
             GearAccel = A("gearAccel", GearAccel);

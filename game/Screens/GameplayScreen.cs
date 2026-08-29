@@ -3,6 +3,7 @@ using Microsoft.Xna.Framework.Graphics;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Crewboss.Mechanics;
 
 namespace Crewboss.Screens;
 
@@ -26,6 +27,8 @@ public class GameplayScreen : Screen
     private QuadController _quad;
     private QuadEffects _effects;
     private readonly QuadAudio _audio = new();
+    private readonly WorldAudio _sfx = new();
+    private bool _wasMounted;
     private PlayerController _player;
     private PlanterSystem _planters;
     private WorldRenderer _world;
@@ -72,6 +75,7 @@ public class GameplayScreen : Screen
             _effects = new QuadEffects();
             _effects.Load(gd);
             _audio.Load();
+            _sfx.Load();
 
             _player = new PlayerController(_quad, _map, _caches);
             if (_map.Tiles != null)
@@ -95,15 +99,15 @@ public class GameplayScreen : Screen
         _input.Update();
         float dt = (float)gameTime.ElapsedGameTime.TotalSeconds;
 
-        if (_input.Restart) { _audio.Mute(); Restart(); return; }
+        if (_input.Restart) { _audio.Mute(); _sfx.Mute(); Restart(); return; }
 
         // Esc: pause during the day; in the overview or on the score screen it quits to the menu
         if (_input.Pause)
         {
-            if (_map == null || _day.PreGame || _day.Over) { _audio.Mute(); QuitToMenu(); return; }
+            if (_map == null || _day.PreGame || _day.Over) { _audio.Mute(); _sfx.Mute(); QuitToMenu(); return; }
             _paused = !_paused;
             _pauseIndex = 0;
-            if (_paused) _audio.Mute();
+            if (_paused) _audio.Mute(); _sfx.Mute();
         }
         if (_paused)
         {
@@ -114,8 +118,8 @@ public class GameplayScreen : Screen
                 switch (_pauseIndex)
                 {
                     case 0: _paused = false; break;
-                    case 1: _audio.Mute(); RestartDay(); break;
-                    case 2: _audio.Mute(); QuitToMenu(); break;
+                    case 1: _audio.Mute(); _sfx.Mute(); RestartDay(); break;
+                    case 2: _audio.Mute(); _sfx.Mute(); QuitToMenu(); break;
                 }
             }
             return;
@@ -143,9 +147,9 @@ public class GameplayScreen : Screen
             if (_input.Reset) { _day.Restart(); ResetPlayer(); }
             return;
         }
-        if (_day.Update(dt)) { _audio.Mute(); RecordResult(); return; }
+        if (_day.Update(dt)) { _audio.Mute(); _sfx.Mute(); RecordResult(); return; }
 
-        if (_input.Reset) ResetPlayer();
+        if (_input.Reset) { _audio.Mute(); _sfx.Mute(); _wasMounted = false; ResetPlayer(); }
 
         if (_player.Aiming)
         {
@@ -155,19 +159,33 @@ public class GameplayScreen : Screen
         {
             _player.HandleActions(_input);
             _player.UpdateReveals(dt);
+
+            // getting on cranks a cold engine; getting off leaves it running.
+            // K is the key: kill it, or restart it from the seat / beside it.
+            if (_player.Mounted && !_wasMounted && !_audio.Running) _audio.Start();
+            _wasMounted = _player.Mounted;
+            if (_input.EngineKey)
+            {
+                bool beside = !_player.Mounted && Vector2.Distance(_player.FootPos, _quad.Pos) < PlayerController.InteractRange;
+                if (_audio.Running) _audio.Stop();
+                else if (_player.Mounted || beside) _audio.Start();
+            }
+
+            _quad.EngineOn = _audio.EngineReady;
             if (_player.Mounted)
             {
-                _quad.EngineOn = _audio.EngineReady;
                 _quad.Update(_input, _map, dt);
                 _effects.Update(_quad, _map, dt);
             }
             else
             {
+                _quad.UpdateParked(dt);
                 _player.UpdateFootMovement(_input, dt);
             }
         }
 
-        _audio.Update(_quad, _player.Mounted, dt);
+        _audio.Update(_quad, _map, dt);
+        _sfx.Update(_player, _map, _audio.Running, dt);
         _planters?.Update(dt, _player.Pos);
 
         Vector2 lead = _player.Mounted ? _quad.Velocity * 0.25f : Vector2.Zero;
@@ -258,7 +276,7 @@ public class GameplayScreen : Screen
         gd.Clear(Color.Transparent);
         spriteBatch.Begin(SpriteSortMode.Deferred, null, SamplerState.PointClamp);
         if (_map != null && !_day.PreGame)
-            _hud.Draw(spriteBatch, _presenter.ViewWidth, _presenter.ViewHeight, _day, _quad, _player, _planters, _showHelp);
+            _hud.Draw(spriteBatch, _presenter.ViewWidth, _presenter.ViewHeight, _day, _quad, _player, _planters, _showHelp, _audio.StartProgress);
         if (_paused)
             _hud.DrawPause(spriteBatch, _presenter.ViewWidth, _presenter.ViewHeight, PauseItems, _pauseIndex);
         spriteBatch.End();

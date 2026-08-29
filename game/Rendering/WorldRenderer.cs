@@ -153,7 +153,7 @@ public sealed class WorldRenderer
         if (!_player.Mounted && _art.ForemanAtlas != null && _art.ForemanFrames != null)
         {
             int dirIdx = _player.FootDir switch { "S" => 0, "N" => 1, _ => 2 };
-            int frame = _player.Walking ? (int)(_player.WalkAnim * 8) % GameArt.WalkFrames : 1;
+            int frame = _player.Walking ? _player.WalkFrame : 1;
             entities.Add(new WorldEntity
             {
                 SortY = _player.FootPos.Y + 11, Tex = _art.ForemanAtlas,
@@ -481,6 +481,10 @@ public sealed class WorldRenderer
         var (action, target) = _player.GetBoxAction();
         if (action != BoxAction.None && _art.BadgeQ != null)
             DrawBadge(sb, _art.BadgeQ, target + new Vector2(0, action == BoxAction.PlaceCache ? -10 : -48));
+
+        // C badge over the crewboss when the following crew can be put on this piece
+        if (_player.CanAssignHere && _art.BadgeC != null)
+            DrawBadge(sb, _art.BadgeC, pos + new Vector2(0, -44));
 
         // C badge over a cache when a line-in is possible from it
         if (!_player.Aiming && _art.BadgeC != null && Planters != null)

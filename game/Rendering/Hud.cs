@@ -18,13 +18,24 @@ public sealed class Hud
     public Hud(GameArt art) => _art = art;
 
     public void Draw(SpriteBatch sb, int viewW, int viewH, DayClock day, QuadController quad,
-        PlayerController player, PlanterSystem planters, bool showHelp)
+        PlayerController player, PlanterSystem planters, bool showHelp, float startProgress = -1f)
     {
         DrawSpeedometer(sb, quad);
+        if (startProgress >= 0f) DrawStartBar(sb, viewW, viewH, startProgress);
         DrawBoxes(sb, quad, player);
         DrawDay(sb, viewW, day, quad, player, planters);
         if (showHelp) DrawControls(sb, viewH);
         if (day.Over) DrawScore(sb, viewW, viewH, planters);
+    }
+
+    /// <summary>Starter cranking: a fill bar above the quad's spot on screen.</summary>
+    private void DrawStartBar(SpriteBatch sb, int viewW, int viewH, float progress)
+    {
+        const int w = 120, h = 12;
+        int x = viewW / 2 - w / 2, y = viewH / 2 - 60;
+        sb.Draw(_art.Solid("startBg", Color.Black), new Rectangle(x - 2, y - 2, w + 4, h + 4), Color.White * 0.7f);
+        sb.Draw(_art.Solid("startFill", new Color(255, 222, 92)), new Rectangle(x, y, (int)(w * progress), h), Color.White);
+        _art.Font.DrawCentered(sb, "STARTING", viewW / 2f, y - 16, 2.2f, new Color(255, 222, 92));
     }
 
     private void DrawSpeedometer(SpriteBatch sb, QuadController quad)
@@ -98,9 +109,10 @@ public sealed class Hud
             ("X / Z", "GEAR UP / DOWN"),
             ("", "CREWBOSS"),
             ("E", "GET ON / OFF THE QUAD"),
+            ("K", "ENGINE OFF / ON"),
             ("Q", "BOXES: LOAD - CACHE ON A ROAD"),
-            ("F", "PICK UP / RELEASE CREW"),
-            ("C", "CUT IN FROM A CACHE"),
+            ("F", "PICK UP / DROP CREW - THEY WAIT"),
+            ("C", "CUT IN AT A CACHE / WORK THIS PIECE"),
             ("T", "COACH A PLANTER"),
             ("TAB", "CUT IN AND RIGHT / LEFT"),
             ("G", "DROP FLAG - FLAGS RUN A LINE"),

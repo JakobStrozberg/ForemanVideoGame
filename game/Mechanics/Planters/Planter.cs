@@ -423,8 +423,7 @@ public class PlanterSystem
 
     /// <summary>
     /// F: every non-following planter within reach joins the line behind you.
-    /// Nobody new to grab? The crew you're leading is assigned the piece you're
-    /// standing in and plants in from here along the piece's in-direction.
+    /// Nobody new to grab? The crew you're leading is dropped here and waits.
     /// </summary>
     public void ToggleCrew(Vector2 playerPos, bool cutRight)
     {
@@ -444,24 +443,44 @@ public class PlanterSystem
         }
         if (pickedAny) return;
 
+        // nobody new to grab: drop the crew here. They wait for an order —
+        // a cut-in from a cache (C) or a piece to work (C inside a piece).
+        foreach (var p in Planters)
+            if (p.State == PlanterState.Following)
+            {
+                p.Path = null;
+                p.State = PlanterState.Waiting;
+            }
+    }
+
+    /// <summary>Any planter following the crewboss right now?</summary>
+    public bool HasFollowers
+    {
+        get { foreach (var p in Planters) if (p.State == PlanterState.Following) return true; return false; }
+    }
+
+    /// <summary>
+    /// C inside a piece with a crew following: they take this piece and plant
+    /// in from where you stand along the piece's in-direction — no cut.
+    /// Returns false when you're not standing in a piece.
+    /// </summary>
+    public bool AssignFollowersHere(Vector2 playerPos, bool cutRight)
+    {
+        var here = TileOf(playerPos);
+        var pc = PieceAt(here.X, here.Y);
+        if (pc == null) return false;
         foreach (var p in Planters)
             if (p.State == PlanterState.Following)
             {
                 p.Path = null;
                 p.CutRight = cutRight;
                 var tile = TileOf(p.Pos);
-                var pc = PieceAt(tile.X, tile.Y) ?? PieceAt(TileOf(playerPos).X, TileOf(playerPos).Y);
-                if (pc == null)
-                {
-                    p.State = PlanterState.Idle;
-                    p.IdleReason = "NOT ON A PIECE";
-                    p.RetryTimer = 2f;
-                    continue;
-                }
+                if (PieceAt(tile.X, tile.Y) != pc) tile = here;
                 Assign(p, pc, tile, tile, pc.InDir, plantInFirst: true);
                 if (p.Bag > 0) PickNextSpot(p);
                 else GoBagUp(p);
             }
+        return true;
     }
 
     private void Unassign(Planter p)

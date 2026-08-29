@@ -1,5 +1,6 @@
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
+using Crewboss.Maps;
 using System;
 using System.IO;
 
@@ -26,6 +27,10 @@ public sealed class QuadAudio : IDisposable
     private readonly Layer _hi = new() { NativeRpm = 3890f };
     private Layer[] Layers => new[] { _idle, _lo, _hi };
 
+    // tires: gravel scrub while drifting, and the roll of the tires on the ground while moving
+    private readonly Layer _drift = new();
+    private readonly Layer _roll = new();
+
     /// <summary>Seconds into quad_start.wav where the engine catches — cranking before, running after.</summary>
     private const float CatchTime = 1.35f;
 
@@ -38,6 +43,10 @@ public sealed class QuadAudio : IDisposable
 
     /// <summary>Engine caught and running: the quad may move.</summary>
     public bool EngineReady => _running && _sinceStart >= CatchTime;
+    /// <summary>Key is on (cranking or running).</summary>
+    public bool Running => _running;
+    /// <summary>0..1 through the crank while starting; -1 when not cranking.</summary>
+    public float StartProgress => _running && _sinceStart < CatchTime ? _sinceStart / CatchTime : -1f;
 
     public void Load()
     {
@@ -48,6 +57,8 @@ public sealed class QuadAudio : IDisposable
         LoadLayer(_idle, Path.Combine(dir, "quad_idle.wav"));
         LoadLayer(_lo, Path.Combine(dir, "quad_drive_lo.wav"));
         LoadLayer(_hi, Path.Combine(dir, "quad_drive.wav"));
+        LoadLayer(_drift, Path.Combine(dir, "quad_drift.wav"));
+        LoadLayer(_roll, Path.Combine(dir, "quad_roll.wav"));
     }
 
     private static void LoadLayer(Layer l, string path)
@@ -74,6 +85,8 @@ public sealed class QuadAudio : IDisposable
         _gain = 0f;
         _start?.Play(MasterVolume, 0f, 0f);
         foreach (var l in Layers) l.Inst?.Play();
+        _drift.Inst?.Play();
+        _roll.Inst?.Play();
     }
 
     /// <summary>Key off: loops fade, shut-off one-shot plays.</summary>
@@ -91,13 +104,12 @@ public sealed class QuadAudio : IDisposable
         _sinceStart = 0f;
         _gain = 0f;
         foreach (var l in Layers) { l.Inst?.Stop(); l.Vol = 0f; }
+        _drift.Inst?.Stop(); _drift.Vol = 0f;
+        _roll.Inst?.Stop(); _roll.Vol = 0f;
     }
 
-    public void Update(QuadController quad, bool mounted, float dt)
+    public void Update(QuadController quad, WorldMap map, float dt)
     {
-        if (mounted && !_running) Start();
-        else if (!mounted && _running) Stop();
-
         if (_running) _sinceStart += dt;
 
         // clutch in: the foot-shift clunk, right as the revs chop
@@ -137,9 +149,43 @@ public sealed class QuadAudio : IDisposable
         Apply(_lo, MathF.Sqrt(wLo), rpm, loudness, wob, dt);
         Apply(_hi, MathF.Sqrt(wHi), rpm, loudness, wob, dt);
 
+        UpdateTires(quad, map, dt);
+
         if (!_running && _gain < 0.01f)
+        {
             foreach (var l in Layers)
                 if (l.Inst?.State == SoundState.Playing) l.Inst.Stop();
+            if (_drift.Inst?.State == SoundState.Playing) _drift.Inst.Stop();
+            if (_roll.Inst?.State == SoundState.Playing) _roll.Inst.Stop();
+        }
+    }
+
+    /// <summary>Gravel scrub while sliding; tire roll on the ground by speed and surface.</summary>
+    private void UpdateTires(QuadController quad, WorldMap map, float dt)
+    {
+        float speed = quad.Speed;
+        float speedFrac = MathHelper.Clamp(speed / 200f, 0f, 1f);
+
+        if (_drift.Inst != null)
+        {
+            // snaps in when the slide starts, tails off over ~0.3s when it ends
+            float target = quad.Drifting && _running ? MathHelper.Lerp(0.5f, 1f, speedFrac) : 0f;
+            float k = target > _drift.Vol ? 14f : 3.5f;
+            _drift.Vol += (target - _drift.Vol) * (1f - MathF.Exp(-k * dt));
+            _drift.Inst.Volume = MathHelper.Clamp(_drift.Vol * MasterVolume, 0f, 1f);
+            _drift.Inst.Pitch = MathHelper.Clamp(-0.15f + 0.3f * speedFrac, -0.5f, 0.5f);
+        }
+
+        if (_roll.Inst != null)
+        {
+            // loudest on gravel road/trail, muted in soft ground; scales with speed
+            string terrain = map?.TerrainName(quad.Pos) ?? "";
+            float surface = terrain switch { "road" => 1f, "trail" => 0.8f, "rock" => 0.6f, "swamp" => 0.15f, _ => 0.4f };
+            float target = _running && speed > 8f ? MathF.Sqrt(speedFrac) * surface : 0f;
+            _roll.Vol += (target - _roll.Vol) * (1f - MathF.Exp(-5f * dt));
+            _roll.Inst.Volume = MathHelper.Clamp(_roll.Vol * MasterVolume * 0.8f, 0f, 1f);
+            _roll.Inst.Pitch = MathHelper.Clamp(-0.3f + 0.5f * speedFrac, -0.5f, 0.5f);
+        }
     }
 
     private void Apply(Layer l, float weight, float rpm, float loudness, float wob, float dt)
@@ -155,6 +201,7 @@ public sealed class QuadAudio : IDisposable
     public void Dispose()
     {
         foreach (var l in Layers) { l.Inst?.Dispose(); l.Fx?.Dispose(); }
+        _drift.Inst?.Dispose(); _drift.Fx?.Dispose(); _roll.Inst?.Dispose(); _roll.Fx?.Dispose();
         _start?.Dispose(); _off?.Dispose(); _shift?.Dispose();
     }
 }

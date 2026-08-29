@@ -89,7 +89,7 @@ public sealed class QuadController
         Throttle = throttle;
         bool braking = input.Brake;
         bool drift = input.Drift;
-        float steer = input.Steer;
+        float steer = EngineOn ? input.Steer * Tweaks.TurnRate : 0f;
 
         float speed0 = Speed;
         Vector2 heading = Heading == Vector2.Zero ? new Vector2(0, -1) : Heading;
@@ -194,6 +194,9 @@ public sealed class QuadController
         UpdateTerrainFollow(map, dt);
         UpdateRpm(throttle, dt);
     }
+
+    /// <summary>Parked with the engine running: revs settle to idle.</summary>
+    public void UpdateParked(float dt) => UpdateRpm(false, dt);
 
     private void UpdateRpm(bool throttle, float dt)
     {

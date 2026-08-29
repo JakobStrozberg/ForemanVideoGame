@@ -51,6 +51,7 @@ public sealed class GameInput
 
     // ---- context actions (edge) ----
     public bool Mount => Pressed(Keys.E);
+    public bool EngineKey => Pressed(Keys.K);
     public bool BoxAction => Pressed(Keys.Q);
     public bool Crew => Pressed(Keys.F);
     public bool LineIn => Pressed(Keys.C);
