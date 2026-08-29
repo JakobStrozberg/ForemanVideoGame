@@ -8,12 +8,29 @@ public enum PlanterState
 {
     Waiting,       // at the trucks, day start
     Following,     // trailing the crewboss
-    CuttingIn,     // walking the boss's exact path, planting the cut line
-    MovingToPlant, // walking to the next plant spot
+    CuttingIn,     // walking the aimed line from the road, planting the cut
+    MovingToPlant, // walking to the next plant spot (or back to an unfinished cut)
     Planting,      // shovel in the ground
     MovingToCache, // bag empty, walking to a cache
-    Idle,          // stuck: no trees available — losing money, fix it
-    Done,          // piece (or area around the anchor) fully planted
+    Idle,          // stuck: no trees, no piece, no path — losing money, fix it
+    Done,          // the piece is planted out — come move me
+}
+
+/// <summary>
+/// A region of plantable ground enclosed by walls: boundaries (roads,
+/// treeline, swamp, rock) and the lines planters cut. Pieces always tile the
+/// block; every wall-to-wall cut splits the piece it crosses in two.
+/// </summary>
+public sealed class Piece
+{
+    public int Id;
+    public HashSet<int> Tiles = new();
+    /// <summary>Tiles along the road-facing edge — where you walk in from.</summary>
+    public List<int> Front = new();
+    /// <summary>From the front into the piece, toward the back wall.</summary>
+    public Point InDir = new(0, -1);
+    public List<Planter> Owners = new();
+    public Vector2 Center;
 }
 
 public class Planter
@@ -24,7 +41,6 @@ public class Planter
     public PlanterState State = PlanterState.Waiting;
     public float StateTimer;
     public int Bag;
-    public Vector2 Anchor;
     public string Dir = "S";
     public float WalkAnim;
     public bool Walking;
@@ -35,18 +51,23 @@ public class Planter
     public float RepathTimer;
     public float RetryTimer;
 
-    public HashSet<int> PieceTiles;   // assigned piece (null = open planting)
+    /// <summary>The piece this planter works. Null = nothing assigned.</summary>
+    public Piece Piece;
 
-    // line-in: aimed from a cache, walked solo
+    // cutting in: walking the aimed bearing from a road cache, planting the line
     public Vector2 LineDir;
     public Vector2 LineStart;
     public int LineTiles;
     public int LastLineTile = -1;
+    public readonly List<int> CutTiles = new();
+    public Piece CutPiece;          // the piece the cut is splitting
+    public bool ResumeCut;          // bag ran out mid-cut: bag up, come back, finish it
+    public Vector2 CutResumeAt;
 
-    // The piece, the way it's worked on the job:
+    // Working the piece:
     //   InDir    = "in" — from the front (road/cache) toward the back wall
     //   SideDir  = which side of the cut line the piece is on (in-and-right / in-and-left)
-    //   CutStart = front tile of the cut line
+    //   CutStart = front tile of the cut line (or where they were released)
     // Back line first (along the back wall), then BACKFILL: each line one
     // spacing toward the front, back and forth, so the back creeps toward the
     // cache. After every bag-up, PLANT IN along the next line off the cut
@@ -71,22 +92,20 @@ public class Planter
 }
 
 /// <summary>
-/// Autonomous planter crew. Planters plant for themselves — the player just
-/// moves them, and keeps caches stocked so they never go idle.
+/// Autonomous planter crew working pieces. The crewboss cuts them in and
+/// keeps the road caches stocked; planters plant for themselves.
 /// </summary>
 public class PlanterSystem
 {
-    public const int BagSize = 40;        // trees per bag-up (one box)
-    public const float PlantTime = 1.4f;  // seconds per tree
+    public const int BagSize = 100;       // trees per bag-up (one box)
+    public const float PlantTime = 1.0f;  // seconds per tree
     public const float WalkSpeed = 78f;
     public const float FollowSpeed = 135f; // hustling behind the boss
     public const int SpotsPerTile = 1;    // one tree per 16x11 tile: lines 16px apart
-    public const int AnchorRadiusTiles = 28;
-
-    public const int PieceCapTiles = 3200; // bigger than this = not really "cut in"
-    public const int MaxLineTiles = 90;    // a line-in ends eventually even on open ground
+    public const int MaxLineTiles = 120;  // a cut ends eventually even on open ground
 
     public readonly List<Planter> Planters = new();
+    public readonly List<Piece> Pieces = new();
     public int TreesPlanted { get; private set; }
     public int Faults { get; private set; }
     public float IdleSeconds { get; private set; }
@@ -95,7 +114,10 @@ public class PlanterSystem
     private readonly List<CacheEntity> _caches;
     private readonly byte[] _planted;   // per-tile planted spot count
     private readonly byte[] _faultBits; // per-tile fault flags, one bit per spot
-    private readonly bool[] _cutLine;   // tiles that are part of a cut line (piece boundaries)
+    private readonly bool[] _wall;      // lines planters cut: piece boundaries
+    private readonly int[] _pieceId;    // per tile, 0 = no piece
+    private readonly Dictionary<int, Piece> _byId = new();
+    private int _nextPieceId = 1;
 
     private static readonly string[] CrewNames = { "Maya", "Cole", "Jess", "Theo" };
 
@@ -103,9 +125,12 @@ public class PlanterSystem
     {
         _map = map;
         _caches = caches;
-        _planted = new byte[map.Width * map.Height];
-        _faultBits = new byte[map.Width * map.Height];
-        _cutLine = new bool[map.Width * map.Height];
+        int n = map.Width * map.Height;
+        _planted = new byte[n];
+        _faultBits = new byte[n];
+        _wall = new bool[n];
+        _pieceId = new int[n];
+        BuildInitialPieces();
     }
 
     public void SpawnCrew(Vector2 near)
@@ -121,9 +146,173 @@ public class PlanterSystem
             });
     }
 
+    // ---------- queries ----------
+
     public bool IsFault(int tx, int ty, int spot) =>
-        tx >= 0 && ty >= 0 && tx < _map.Width && ty < _map.Height &&
-        (_faultBits[ty * _map.Width + tx] & (1 << spot)) != 0;
+        InBounds(tx, ty) && (_faultBits[ty * _map.Width + tx] & (1 << spot)) != 0;
+
+    public bool IsCutLine(int tx, int ty) => InBounds(tx, ty) && _wall[ty * _map.Width + tx];
+
+    public byte PlantedAtTile(int tx, int ty) => InBounds(tx, ty) ? _planted[ty * _map.Width + tx] : (byte)0;
+
+    public Piece PieceAt(int tx, int ty) =>
+        InBounds(tx, ty) && _pieceId[ty * _map.Width + tx] != 0 ? _byId[_pieceId[ty * _map.Width + tx]] : null;
+
+    public Piece PieceAt(Vector2 world) => PieceAt((int)(world.X / _map.TileSize), (int)(world.Y / _map.TileHeight));
+
+    public int PlantedIn(Piece pc)
+    {
+        int n = 0;
+        foreach (int ti in pc.Tiles) n += _planted[ti];
+        return n;
+    }
+
+    private bool InBounds(int tx, int ty) => tx >= 0 && ty >= 0 && tx < _map.Width && ty < _map.Height;
+
+    private bool IsGround(Point t)
+    {
+        if (!InBounds(t.X, t.Y)) return false;
+        var terr = _map.TerrainAtTile(t.X, t.Y);
+        return terr.Name == "slash" || terr.Name == "cream";
+    }
+
+    private bool IsRoad(Point t)
+    {
+        if (!InBounds(t.X, t.Y)) return false;
+        var terr = _map.TerrainAtTile(t.X, t.Y);
+        return terr.Name == "road" || terr.Name == "trail";
+    }
+
+    private Point TileOf(Vector2 pos) => new((int)(pos.X / _map.TileSize), (int)(pos.Y / _map.TileHeight));
+    private Vector2 CenterOf(Point t) => new(t.X * _map.TileSize + _map.TileSize / 2f, t.Y * _map.TileHeight + _map.TileHeight / 2f);
+    private int Index(Point t) => t.Y * _map.Width + t.X;
+    private Point TileOfIndex(int ti) => new(ti % _map.Width, ti / _map.Width);
+
+    // ---------- pieces ----------
+
+    /// <summary>The block's natural regions: plantable ground split by roads, forest, swamp, rock.</summary>
+    private void BuildInitialPieces()
+    {
+        for (int ty = 0; ty < _map.Height; ty++)
+            for (int tx = 0; tx < _map.Width; tx++)
+            {
+                var t = new Point(tx, ty);
+                if (!IsGround(t) || _pieceId[Index(t)] != 0) continue;
+                MakePiece(Flood(t, null), null);
+            }
+    }
+
+    /// <summary>Connected plantable tiles from start, not crossing walls; optionally limited to a set.</summary>
+    private HashSet<int> Flood(Point start, HashSet<int> within)
+    {
+        var region = new HashSet<int>();
+        var queue = new Queue<Point>();
+        int si = Index(start);
+        if (!IsGround(start) || _wall[si] || (within != null && !within.Contains(si))) return region;
+        region.Add(si);
+        queue.Enqueue(start);
+        while (queue.Count > 0)
+        {
+            var c = queue.Dequeue();
+            Span<Point> next = stackalloc[] { new Point(c.X + 1, c.Y), new Point(c.X - 1, c.Y), new Point(c.X, c.Y + 1), new Point(c.X, c.Y - 1) };
+            foreach (var nb in next)
+            {
+                if (!IsGround(nb)) continue;
+                int ni = Index(nb);
+                if (region.Contains(ni) || _wall[ni]) continue;
+                if (within != null && !within.Contains(ni)) continue;
+                region.Add(ni);
+                queue.Enqueue(nb);
+            }
+        }
+        return region;
+    }
+
+    private Piece MakePiece(HashSet<int> tiles, Point? inDir)
+    {
+        var pc = new Piece { Id = _nextPieceId++, Tiles = tiles };
+        foreach (int ti in tiles) _pieceId[ti] = pc.Id;
+        _byId[pc.Id] = pc;
+        Pieces.Add(pc);
+        ComputeFront(pc, inDir);
+        return pc;
+    }
+
+    /// <summary>Front = tiles touching a road (else any wall); InDir = from the front toward the middle.</summary>
+    private void ComputeFront(Piece pc, Point? inDir)
+    {
+        pc.Front.Clear();
+        var fallback = new List<int>();
+        float cx = 0, cy = 0;
+        foreach (int ti in pc.Tiles)
+        {
+            var t = TileOfIndex(ti);
+            cx += t.X; cy += t.Y;
+            bool road = false, edge = false;
+            Span<Point> next = stackalloc[] { new Point(t.X + 1, t.Y), new Point(t.X - 1, t.Y), new Point(t.X, t.Y + 1), new Point(t.X, t.Y - 1) };
+            foreach (var nb in next)
+            {
+                if (IsRoad(nb)) road = true;
+                else if (!IsGround(nb) || _wall[Index(nb)]) edge = true;
+            }
+            if (road) pc.Front.Add(ti);
+            else if (edge) fallback.Add(ti);
+        }
+        if (pc.Front.Count == 0) pc.Front.AddRange(fallback);
+        cx /= Math.Max(1, pc.Tiles.Count); cy /= Math.Max(1, pc.Tiles.Count);
+        pc.Center = new Vector2(cx * _map.TileSize + _map.TileSize / 2f, cy * _map.TileHeight + _map.TileHeight / 2f);
+
+        if (inDir.HasValue) { pc.InDir = inDir.Value; return; }
+        if (pc.Front.Count == 0) { pc.InDir = new Point(0, -1); return; }
+        float fx = 0, fy = 0;
+        foreach (int ti in pc.Front) { var t = TileOfIndex(ti); fx += t.X; fy += t.Y; }
+        fx /= pc.Front.Count; fy /= pc.Front.Count;
+        pc.InDir = Axis(new Vector2(cx - fx, cy - fy));
+    }
+
+    /// <summary>
+    /// Walls changed inside a piece (a cut went wall to wall): re-flood it into
+    /// its connected parts. Owners keep the part their current line sits in.
+    /// </summary>
+    private void SplitPiece(Piece old, Point? inDir)
+    {
+        var owners = new List<Planter>(old.Owners);
+        var remaining = new HashSet<int>();
+        foreach (int ti in old.Tiles) { _pieceId[ti] = 0; if (!_wall[ti]) remaining.Add(ti); }
+        Pieces.Remove(old);
+        _byId.Remove(old.Id);
+
+        var parts = new List<Piece>();
+        foreach (int ti in remaining)
+        {
+            if (_pieceId[ti] != 0) continue;
+            var region = Flood(TileOfIndex(ti), remaining);
+            if (region.Count == 0) continue;
+            parts.Add(MakePiece(region, inDir));
+        }
+
+        foreach (var o in owners)
+        {
+            o.Piece = null;
+            var at = PieceAt(o.LineTile.X, o.LineTile.Y) ?? PieceAt(o.Pos);
+            if (at == null)
+            {
+                float best = float.MaxValue;
+                foreach (var pc in parts)
+                {
+                    float d = Vector2.DistanceSquared(pc.Center, o.Pos);
+                    if (d < best) { best = d; at = pc; }
+                }
+            }
+            if (at != null) { o.Piece = at; at.Owners.Add(o); }
+        }
+    }
+
+    private static Point Axis(Vector2 v) => MathF.Abs(v.X) >= MathF.Abs(v.Y)
+        ? new Point(v.X >= 0 ? 1 : -1, 0)
+        : new Point(0, v.Y >= 0 ? 1 : -1);
+
+    // ---------- crew commands ----------
 
     /// <summary>Coach the planter: quality snaps back to 100, they pause a beat.</summary>
     public void Coach(Planter p)
@@ -145,17 +334,10 @@ public class PlanterSystem
         return best;
     }
 
-    public bool IsCutLine(int tx, int ty) =>
-        tx >= 0 && ty >= 0 && tx < _map.Width && ty < _map.Height && _cutLine[ty * _map.Width + tx];
-
-    public byte PlantedAtTile(int tx, int ty) =>
-        tx < 0 || ty < 0 || tx >= _map.Width || ty >= _map.Height ? (byte)0 : _planted[ty * _map.Width + tx];
-
     /// <summary>
-    /// F key: every non-following planter within reach joins the line behind you.
-    /// If there's no one new to grab, the crew you're leading gets released here:
-    /// they plant IN from this spot in the direction they were walking (that
-    /// line is their cut line), then work the piece off it.
+    /// F: every non-following planter within reach joins the line behind you.
+    /// Nobody new to grab? The crew you're leading is assigned the piece you're
+    /// standing in and plants in from here along the piece's in-direction.
     /// </summary>
     public void ToggleCrew(Vector2 playerPos, bool cutRight)
     {
@@ -165,11 +347,10 @@ public class PlanterSystem
             if (p.State == PlanterState.Following || p.State == PlanterState.CuttingIn) continue;
             if (Vector2.Distance(p.Pos, playerPos) < 90f)
             {
+                Unassign(p);
                 p.State = PlanterState.Following;
                 p.Path = null;
                 p.PlantSpot = null;
-                p.PieceTiles = null;
-                p.HasFill = false;
                 p.RepathTimer = 0;
                 pickedAny = true;
             }
@@ -179,13 +360,31 @@ public class PlanterSystem
         foreach (var p in Planters)
             if (p.State == PlanterState.Following)
             {
-                p.Anchor = p.Pos;
                 p.Path = null;
                 p.CutRight = cutRight;
-                InitPiece(p, DirVector(p.Dir), TileOf(p.Pos), TileOf(p.Pos), plantInFirst: true);
+                var tile = TileOf(p.Pos);
+                var pc = PieceAt(tile.X, tile.Y) ?? PieceAt(TileOf(playerPos).X, TileOf(playerPos).Y);
+                if (pc == null)
+                {
+                    p.State = PlanterState.Idle;
+                    p.IdleReason = "NOT ON A PIECE";
+                    p.RetryTimer = 2f;
+                    continue;
+                }
+                Assign(p, pc, tile, tile, pc.InDir, plantInFirst: true);
                 if (p.Bag > 0) PickNextSpot(p);
                 else GoBagUp(p);
             }
+    }
+
+    private void Unassign(Planter p)
+    {
+        p.Piece?.Owners.Remove(p);
+        p.Piece = null;
+        p.HasFill = false;
+        p.CutTiles.Clear();
+        p.CutPiece = null;
+        p.ResumeCut = false;
     }
 
     /// <summary>Who gets the line-in: the lead follower, else the nearest free planter by the cache.</summary>
@@ -207,18 +406,20 @@ public class PlanterSystem
     }
 
     /// <summary>
-    /// Aimed line-in: the planter bags up at the cache, then marches the given
-    /// bearing on their own, planting the cut line as they go. The line ends at
-    /// unplantable ground, MaxLineTiles, or an empty bag — then they work the piece.
+    /// Aimed line-in from a road cache: the planter bags up, then walks the
+    /// bearing planting the cut until it hits a wall. That splits the piece;
+    /// they take the side you chose. Aimed along a line that's already in,
+    /// they just take that side of it — no new cut.
     /// </summary>
     public void StartLineIn(Planter p, CacheEntity cache, Vector2 dir, bool cutRight)
     {
-        p.CutRight = cutRight;
+        Unassign(p);
         if (p.Bag <= 0 && cache.Boxes > 0)
         {
             cache.Boxes--;
             p.Bag = BagSize;
         }
+        p.CutRight = cutRight;
         p.Pos = cache.Pos + dir * 14f;
         p.State = PlanterState.CuttingIn;
         p.LineDir = dir;
@@ -226,53 +427,10 @@ public class PlanterSystem
         p.LineTiles = 0;
         p.LastLineTile = -1;
         p.Path = null;
-        p.PieceTiles = null;
         p.PlantSpot = null;
-        p.HasFill = false;
     }
 
-    /// <summary>
-    /// The piece enclosing a tile: flood fill over plantable ground bounded by
-    /// cut lines, roads, forest, swamp, rock. Returns null when the region is
-    /// open-ended (bigger than PieceCapTiles) or the start isn't plantable —
-    /// the planter then falls back to open radius planting.
-    /// </summary>
-    private HashSet<int> FloodPiece(Point start)
-    {
-        int w = _map.Width, h = _map.Height;
-        int sx = Math.Clamp(start.X, 0, w - 1), sy = Math.Clamp(start.Y, 0, h - 1);
-        if (!IsPieceGround(sx, sy)) return null;
-
-        var piece = new HashSet<int>();
-        var queue = new Queue<int>();
-        int first = sy * w + sx;
-        piece.Add(first);
-        queue.Enqueue(first);
-
-        while (queue.Count > 0)
-        {
-            if (piece.Count > PieceCapTiles) return null; // open ground, not a piece
-            int cur = queue.Dequeue();
-            int cx = cur % w, cy = cur / w;
-            Span<(int, int)> next = stackalloc[] { (cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1) };
-            foreach (var (nx, ny) in next)
-            {
-                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-                int ni = ny * w + nx;
-                if (piece.Contains(ni) || !IsPieceGround(nx, ny)) continue;
-                piece.Add(ni);
-                queue.Enqueue(ni);
-            }
-        }
-        return piece;
-    }
-
-    private bool IsPieceGround(int tx, int ty)
-    {
-        if (_cutLine[ty * _map.Width + tx]) return false;
-        var t = _map.TerrainAtTile(tx, ty);
-        return t.Name == "slash" || t.Name == "cream";
-    }
+    // ---------- update ----------
 
     public void Update(float dt, Vector2 playerPos)
     {
@@ -300,31 +458,19 @@ public class PlanterSystem
                     break;
 
                 case PlanterState.CuttingIn:
-                {
-                    // march the aimed bearing, planting the cut line
-                    StepToward(p, p.Pos + p.LineDir * 12f, dt);
-                    MarkCutLine(p);
-
-                    Vector2 ahead = p.Pos + p.LineDir * (_map.TileSize * 0.8f);
-                    var ta = _map.TerrainAtWorld(ahead);
-                    bool blocked = ta.Name != "slash" && ta.Name != "cream";
-                    if (blocked || p.LineTiles >= MaxLineTiles || p.Bag <= 0)
-                    {
-                        // the cut's in. Back line along the wall, then backfill.
-                        p.Anchor = (p.LineStart + p.Pos) / 2f;
-                        InitPiece(p, p.LineDir, TileOf(p.LineStart), TileOf(p.Pos), plantInFirst: false);
-                        if (p.Bag > 0) PickNextSpot(p);
-                        else GoBagUp(p);
-                    }
+                    UpdateCutting(p, dt);
                     break;
-                }
 
                 case PlanterState.MovingToPlant:
                     if (MoveAlong(p, dt))
                     {
-                        // path ends at the tile center; step to the exact spot
                         if (p.PlantSpot.HasValue && Vector2.Distance(p.Pos, p.PlantSpot.Value) > 3)
-                            StepToward(p, p.PlantSpot.Value, dt);
+                            StepToward(p, p.PlantSpot.Value, dt); // path ends at the tile center; step to the exact spot
+                        else if (p.ResumeCut)
+                        {
+                            p.ResumeCut = false;   // back at the end of the cut with a full bag: finish it
+                            p.State = PlanterState.CuttingIn;
+                        }
                         else
                         {
                             p.State = PlanterState.Planting;
@@ -352,8 +498,20 @@ public class PlanterSystem
                         {
                             cache.Boxes--;
                             p.Bag = BagSize;
-                            StartPlantIn(p); // never dead-walk: plant in along the next line off the cut
-                            PickNextSpot(p);
+                            if (p.ResumeCut)
+                            {
+                                // walk back to where the cut stopped and carry on cutting
+                                p.PlantSpot = p.CutResumeAt;
+                                p.Path = Pathfinder.FindPath(_map, p.Pos, p.CutResumeAt, PlanterCost);
+                                p.PathIdx = 0;
+                                p.State = p.Path != null ? PlanterState.MovingToPlant : PlanterState.Idle;
+                                p.IdleReason = p.Path != null ? "" : "NO PATH BACK TO CUT";
+                            }
+                            else
+                            {
+                                StartPlantIn(p); // never dead-walk: plant in along the next line off the cut
+                                PickNextSpot(p);
+                            }
                         }
                         else GoBagUp(p); // it drained while we walked
                     }
@@ -364,7 +522,9 @@ public class PlanterSystem
                     if (p.RetryTimer <= 0)
                     {
                         p.RetryTimer = 2f;
-                        if (p.Bag > 0) PickNextSpot(p);
+                        if (p.ResumeCut) GoBagUp(p);
+                        else if (p.Piece == null) p.IdleReason = "NO PIECE - CUT ME IN";
+                        else if (p.Bag > 0) PickNextSpot(p);
                         else GoBagUp(p);
                     }
                     break;
@@ -372,29 +532,263 @@ public class PlanterSystem
         }
     }
 
-    // ---------- state helpers ----------
-
-    /// <summary>Mark the tile the line planter stands on as line and plant its row (2 spots).</summary>
-    private void MarkCutLine(Planter p)
+    /// <summary>
+    /// Walk the aimed bearing. On the road: just walk. On ground: plant the
+    /// cut tile by tile (a wall). Hitting a wall or boundary after cutting
+    /// ends the cut. Starting on a line that's already in: take its side.
+    /// </summary>
+    private void UpdateCutting(Planter p, float dt)
     {
-        int tx = (int)(p.Pos.X / _map.TileSize), ty = (int)(p.Pos.Y / _map.TileHeight);
-        if (tx < 0 || ty < 0 || tx >= _map.Width || ty >= _map.Height) return;
-        int ti = ty * _map.Width + tx;
+        StepToward(p, p.Pos + p.LineDir * 12f, dt);
+        var t = TileOf(p.Pos);
+        int ti = InBounds(t.X, t.Y) ? Index(t) : -1;
+        if (ti < 0) { FinishCut(p); return; }
         if (ti == p.LastLineTile) return;
         p.LastLineTile = ti;
 
-        var t = _map.TerrainAtTile(tx, ty);
-        if (t.Name != "slash" && t.Name != "cream") return;
-        _cutLine[ti] = true;
-        p.LineTiles++;
-
-        while (_planted[ti] < SpotsPerTile && p.Bag > 0)
+        if (IsGround(t))
         {
-            RollFault(p, ti, _planted[ti]);
-            _planted[ti]++;
-            p.Bag--;
-            TreesPlanted++;
+            if (_wall[ti])
+            {
+                // an existing line: lining in along it means "take that side" — no new cut
+                FinishCut(p);
+                return;
+            }
+            if (p.CutTiles.Count == 0) p.CutPiece = PieceAt(t.X, t.Y);
+            _wall[ti] = true;
+            _pieceId[ti] = 0;
+            p.CutPiece?.Tiles.Remove(ti);
+            p.CutTiles.Add(ti);
+            p.LineTiles++;
+            if (_planted[ti] < SpotsPerTile && p.Bag > 0)
+            {
+                RollFault(p, ti, _planted[ti]);
+                _planted[ti]++;
+                p.Bag--;
+                TreesPlanted++;
+            }
+            if (p.LineTiles >= MaxLineTiles) { FinishCut(p); return; }
+            if (p.Bag <= 0)
+            {
+                // out of trees mid-cut: bag up, come back, finish the line
+                p.ResumeCut = true;
+                p.CutResumeAt = CenterOf(t);
+                GoBagUp(p);
+            }
         }
+        else if (p.CutTiles.Count > 0 || !IsRoad(t))
+        {
+            // off the ground after cutting (or wandered off the road before finding ground): the cut's in
+            FinishCut(p);
+        }
+    }
+
+    /// <summary>The cut is complete: split the piece it crossed, take the chosen side.</summary>
+    private void FinishCut(Planter p)
+    {
+        p.ResumeCut = false;
+        Point axis = Axis(p.LineDir);
+        Point right = new(-axis.Y, axis.X), left = new(axis.Y, -axis.X);
+        Point side = p.CutRight ? right : left;
+
+        Point cutStart, cutEnd;
+        if (p.CutTiles.Count > 0)
+        {
+            cutStart = TileOfIndex(p.CutTiles[0]);
+            cutEnd = TileOfIndex(p.CutTiles[^1]);
+            if (p.CutPiece != null && Pieces.Contains(p.CutPiece)) SplitPiece(p.CutPiece, axis);
+        }
+        else
+        {
+            cutStart = cutEnd = TileOf(p.Pos);
+        }
+        p.CutTiles.Clear();
+        p.CutPiece = null;
+
+        var sideEnd = cutEnd + side;
+        var sideStart = cutStart + side;
+        var pc = PieceAt(sideEnd.X, sideEnd.Y) ?? PieceAt(sideStart.X, sideStart.Y) ?? PieceAt(p.Pos);
+        if (pc == null)
+        {
+            p.State = PlanterState.Idle;
+            p.IdleReason = "NO PIECE ON THAT SIDE";
+            p.RetryTimer = 2f;
+            return;
+        }
+        Assign(p, pc, cutStart, cutEnd, axis, plantInFirst: false);
+        if (p.Bag > 0) PickNextSpot(p);
+        else GoBagUp(p);
+    }
+
+    /// <summary>
+    /// Give a planter a piece and set up how they work it. With a cut: back
+    /// line first from the end of the cut. Without: plant in from where they
+    /// stand, then back-line and backfill.
+    /// </summary>
+    private void Assign(Planter p, Piece pc, Point cutStart, Point cutEnd, Point inDir, bool plantInFirst)
+    {
+        p.Piece?.Owners.Remove(p);
+        p.Piece = pc;
+        if (!pc.Owners.Contains(p)) pc.Owners.Add(p);
+
+        p.InDir = inDir;
+        Point right = new(-p.InDir.Y, p.InDir.X); // right of "in" (screen y is down)
+        Point left = new(p.InDir.Y, -p.InDir.X);
+        p.SideDir = p.CutRight ? right : left;
+        p.CutStart = cutStart;
+        p.BagUps = 0;
+        p.HasFill = true;
+        p.StepDir = new Point(-p.InDir.X, -p.InDir.Y); // every step-over is one line toward the front
+
+        if (plantInFirst)
+        {
+            p.PlantingIn = true;
+            p.FillDir = p.InDir;
+            p.LineTile = cutStart;
+        }
+        else
+        {
+            p.PlantingIn = false;
+            p.FillDir = p.SideDir;
+            p.LineTile = cutEnd + p.SideDir; // back line: along the wall, beside the cut's end
+        }
+        p.IdleReason = "";
+    }
+
+    /// <summary>Bag's full again: plant in along the next line off the cut, from the front.</summary>
+    private void StartPlantIn(Planter p)
+    {
+        if (!p.HasFill || p.Piece == null) return;
+        p.BagUps++;
+        var start = new Point(p.CutStart.X + p.SideDir.X * p.BagUps, p.CutStart.Y + p.SideDir.Y * p.BagUps);
+        if (Open(p, start))
+        {
+            p.PlantingIn = true;
+            p.FillDir = p.InDir;
+            p.LineTile = start;
+            return;
+        }
+        // that line's in already (or off the piece): plant in from the nearest open front tile
+        int bestTi = -1; float best = float.MaxValue;
+        foreach (int ti in p.Piece.Front)
+        {
+            if (_planted[ti] >= SpotsPerTile) continue;
+            float d = Vector2.DistanceSquared(CenterOf(TileOfIndex(ti)), p.Pos);
+            if (d < best) { best = d; bestTi = ti; }
+        }
+        if (bestTi >= 0)
+        {
+            p.PlantingIn = true;
+            p.FillDir = p.InDir;
+            p.LineTile = TileOfIndex(bestTi);
+        }
+        else
+        {
+            p.PlantingIn = false;
+            p.FillDir = p.SideDir;
+        }
+    }
+
+    // ---------- the fill pattern ----------
+
+    private bool Open(Planter p, Point t)
+    {
+        if (p.Piece == null || !InBounds(t.X, t.Y)) return false;
+        int ti = Index(t);
+        return p.Piece.Tiles.Contains(ti) && !_wall[ti] && _planted[ti] < SpotsPerTile;
+    }
+
+    /// <summary>
+    /// Next tile in the pattern. Planting in: straight along InDir until the
+    /// back (trees already in, or a wall). Backfill: along FillDir to the
+    /// wall, then one line toward the front and back the other way.
+    /// </summary>
+    private bool NextLineTile(Planter p, out Point tile)
+    {
+        if (Open(p, p.LineTile)) { tile = p.LineTile; return true; } // finish this tile
+
+        if (p.PlantingIn)
+        {
+            Point ahead = p.LineTile + p.InDir;
+            if (Open(p, ahead)) { tile = ahead; return true; }
+            p.PlantingIn = false;      // reached the back: backfill from here, away from the cut
+            p.FillDir = p.SideDir;
+        }
+
+        Point next = p.LineTile + p.FillDir;
+        if (Open(p, next)) { tile = next; return true; }
+
+        // wall: step toward the front (skipping a small gap), turn around
+        for (int k = 1; k <= 3; k++)
+        {
+            var over = new Point(p.LineTile.X + p.StepDir.X * k, p.LineTile.Y + p.StepDir.Y * k);
+            if (Open(p, over))
+            {
+                p.FillDir = new Point(-p.FillDir.X, -p.FillDir.Y);
+                tile = over;
+                return true;
+            }
+        }
+        tile = default;
+        return false;
+    }
+
+    /// <summary>Anything left in the piece? Restart the pattern at the nearest open tile.</summary>
+    private bool NearestOpenTile(Planter p, out Point tile)
+    {
+        int bestTi = -1; float best = float.MaxValue;
+        if (p.Piece != null)
+            foreach (int ti in p.Piece.Tiles)
+            {
+                if (_wall[ti] || _planted[ti] >= SpotsPerTile) continue;
+                float d = Vector2.DistanceSquared(CenterOf(TileOfIndex(ti)), p.Pos);
+                if (d < best) { best = d; bestTi = ti; }
+            }
+        tile = bestTi >= 0 ? TileOfIndex(bestTi) : default;
+        return bestTi >= 0;
+    }
+
+    private void PickNextSpot(Planter p)
+    {
+        if (p.Piece == null)
+        {
+            p.State = PlanterState.Idle;
+            p.IdleReason = "NO PIECE - CUT ME IN";
+            p.RetryTimer = 2f;
+            return;
+        }
+        if (!p.HasFill) Assign(p, p.Piece, TileOf(p.Pos), TileOf(p.Pos), p.Piece.InDir, plantInFirst: true);
+
+        if (!NextLineTile(p, out Point tile))
+        {
+            if (!NearestOpenTile(p, out tile))
+            {
+                p.State = PlanterState.Done; // piece planted out — come move me, boss
+                return;
+            }
+            p.PlantingIn = false;
+            p.FillDir = p.SideDir;
+        }
+        p.LineTile = tile;
+
+        int spot = _planted[Index(tile)];
+        p.PlantSpot = SpotPos(tile.X, tile.Y, spot, _map.TileSize, _map.TileHeight);
+        p.Path = Pathfinder.FindPath(_map, p.Pos, CenterOf(tile), PlanterCost);
+        p.PathIdx = 0;
+        p.State = p.Path != null ? PlanterState.MovingToPlant : PlanterState.Idle;
+        p.IdleReason = p.Path != null ? "" : "NO PATH TO SPOT";
+    }
+
+    private void CommitTree(Planter p)
+    {
+        if (!p.PlantSpot.HasValue) return;
+        var t = TileOf(p.PlantSpot.Value);
+        if (!InBounds(t.X, t.Y)) return;
+        int ti = Index(t);
+        if (_planted[ti] >= SpotsPerTile) return;
+        RollFault(p, ti, _planted[ti]);
+        _planted[ti]++;
+        TreesPlanted++;
     }
 
     /// <summary>Low quality meter = chance this tree goes in bad (silently flagged).</summary>
@@ -410,6 +804,18 @@ public class PlanterSystem
             Faults++;
         }
     }
+
+    /// <summary>Deterministic planting position in a tile: the center, jittered so lines look hand-planted.</summary>
+    public static Vector2 SpotPos(int tx, int ty, int spot, int ts, int th)
+    {
+        uint h = (uint)(tx * 7349 + ty * 9241 + spot * 131);
+        h = (h ^ (h >> 13)) * 1274126177u;
+        float jx = (h & 0xFF) / 255f * 5f - 2.5f;
+        float jy = ((h >> 8) & 0xFF) / 255f * 3f - 1.5f;
+        return new Vector2(tx * ts + ts / 2f + jx, ty * th + th / 2f + jy);
+    }
+
+    // ---------- movement ----------
 
     private void UpdateFollowing(Planter p, float dt, Vector2 playerPos)
     {
@@ -442,226 +848,6 @@ public class PlanterSystem
         p.IdleReason = p.Path != null ? "" : "NO PATH TO CACHE";
         p.RetryTimer = 2f;
     }
-
-    // ---------- the piece ----------
-
-    private Point TileOf(Vector2 pos) => new((int)(pos.X / _map.TileSize), (int)(pos.Y / _map.TileHeight));
-
-    private static Vector2 DirVector(string dir) => dir switch
-    {
-        "N" => new Vector2(0, -1),
-        "S" => new Vector2(0, 1),
-        "E" => new Vector2(1, 0),
-        _ => new Vector2(-1, 0)
-    };
-
-    private static Point Axis(Vector2 v) => MathF.Abs(v.X) >= MathF.Abs(v.Y)
-        ? new Point(v.X >= 0 ? 1 : -1, 0)
-        : new Point(0, v.Y >= 0 ? 1 : -1);
-
-    /// <summary>
-    /// Set up the piece off a cut line running from cutStart to cutEnd along
-    /// `inward`. Side = whichever side of the cut has more open ground
-    /// ("in and right" / "in and left"). Line-in planters start their back
-    /// line at the wall; released followers plant IN first (that line is
-    /// their cut), then back-line and backfill.
-    /// </summary>
-    private void InitPiece(Planter p, Vector2 inward, Point cutStart, Point cutEnd, bool plantInFirst)
-    {
-        p.InDir = Axis(inward);
-        p.CutStart = cutStart;
-        p.BagUps = 0;
-        p.HasFill = true;
-
-        Point right = new(-p.InDir.Y, p.InDir.X); // right of "in" (screen y is down)
-        Point left = new(p.InDir.Y, -p.InDir.X);
-        p.SideDir = p.CutRight ? right : left;
-
-        // the piece is the enclosed region beside the cut (null = open ground)
-        p.PieceTiles = FloodPiece(cutEnd + p.SideDir) ?? FloodPiece(cutStart + p.SideDir);
-
-        if (plantInFirst)
-        {
-            p.PlantingIn = true;
-            p.FillDir = p.InDir;
-            p.LineTile = cutStart;
-        }
-        else
-        {
-            // back line: along the wall, starting beside the cut's end
-            p.PlantingIn = false;
-            p.FillDir = p.SideDir;
-            p.LineTile = cutEnd + p.SideDir;
-        }
-        p.StepDir = new Point(-p.InDir.X, -p.InDir.Y); // every step-over is one line toward the front
-    }
-
-    /// <summary>Bag's full again at the cache: plant in along the next line off the cut line.</summary>
-    private void StartPlantIn(Planter p)
-    {
-        if (!p.HasFill) return;
-        p.BagUps++;
-        var start = new Point(p.CutStart.X + p.SideDir.X * p.BagUps, p.CutStart.Y + p.SideDir.Y * p.BagUps);
-        if (IsFillable(p, start) && HasRoom(start))
-        {
-            p.PlantingIn = true;
-            p.FillDir = p.InDir;
-            p.LineTile = start;
-        }
-        else
-        {
-            p.PlantingIn = false; // that line's already in — resume the backfill from wherever it stands
-            p.FillDir = p.SideDir;
-        }
-    }
-
-    private bool IsGround(Point t)
-    {
-        if (t.X < 0 || t.Y < 0 || t.X >= _map.Width || t.Y >= _map.Height) return false;
-        var terr = _map.TerrainAtTile(t.X, t.Y);
-        return terr.Name == "slash" || terr.Name == "cream";
-    }
-
-    private bool IsCut(Point t) => _cutLine[t.Y * _map.Width + t.X];
-
-    /// <summary>Can this planter put a tree here: plantable ground, not a cut line, inside their piece / anchor radius.</summary>
-    private bool IsFillable(Planter p, Point t)
-    {
-        if (!IsGround(t) || IsCut(t)) return false; // cut lines are walls: planted rows
-        int ti = t.Y * _map.Width + t.X;
-        if (p.PieceTiles != null) return p.PieceTiles.Contains(ti);
-        int ax = (int)(p.Anchor.X / _map.TileSize), ay = (int)(p.Anchor.Y / _map.TileHeight);
-        return Math.Max(Math.Abs(t.X - ax), Math.Abs(t.Y - ay)) <= AnchorRadiusTiles;
-    }
-
-    private bool HasRoom(Point t) => _planted[t.Y * _map.Width + t.X] < SpotsPerTile;
-
-    private bool Open(Planter p, Point t) => IsFillable(p, t) && HasRoom(t);
-
-    /// <summary>
-    /// Next tile in the pattern. Planting in: straight along InDir until the
-    /// back (trees already in, or a wall). Backfill: along FillDir to the
-    /// wall, then one line toward the front and back the other way.
-    /// </summary>
-    private bool NextLineTile(Planter p, out Point tile)
-    {
-        if (Open(p, p.LineTile)) { tile = p.LineTile; return true; } // finish this tile
-
-        if (p.PlantingIn)
-        {
-            Point ahead = p.LineTile + p.InDir;
-            if (Open(p, ahead)) { tile = ahead; return true; }
-            // reached the back: carry on backfilling from here, away from the cut
-            p.PlantingIn = false;
-            p.FillDir = p.SideDir;
-        }
-
-        Point next = p.LineTile + p.FillDir;
-        if (Open(p, next)) { tile = next; return true; }
-
-        // wall: step toward the front (skipping a small gap), turn around
-        for (int k = 1; k <= 3; k++)
-        {
-            var over = new Point(p.LineTile.X + p.StepDir.X * k, p.LineTile.Y + p.StepDir.Y * k);
-            if (Open(p, over))
-            {
-                p.FillDir = new Point(-p.FillDir.X, -p.FillDir.Y);
-                tile = over;
-                return true;
-            }
-        }
-        tile = default;
-        return false;
-    }
-
-    /// <summary>Anything left to plant for this planter (piece, or anchor radius)? Restart the pattern there.</summary>
-    private bool NearestOpenTile(Planter p, out Point tile)
-    {
-        int ts = _map.TileSize, th = _map.TileHeight;
-        int fromTx = (int)(p.Pos.X / ts), fromTy = (int)(p.Pos.Y / th);
-        int bestTx = -1, bestTy = -1;
-        float bestD = float.MaxValue;
-
-        if (p.PieceTiles != null)
-        {
-            foreach (int ti in p.PieceTiles)
-            {
-                var t = new Point(ti % _map.Width, ti / _map.Width);
-                if (!Open(p, t)) continue;
-                float d = Vector2.DistanceSquared(new Vector2(t.X, t.Y), new Vector2(fromTx, fromTy));
-                if (d < bestD) { bestD = d; bestTx = t.X; bestTy = t.Y; }
-            }
-        }
-        else
-        {
-            for (int r = 0; r <= AnchorRadiusTiles * 2 && bestTx < 0; r++)
-                for (int ty = fromTy - r; ty <= fromTy + r; ty++)
-                    for (int tx = fromTx - r; tx <= fromTx + r; tx++)
-                    {
-                        if (Math.Max(Math.Abs(tx - fromTx), Math.Abs(ty - fromTy)) != r) continue; // ring only
-                        var t = new Point(tx, ty);
-                        if (!Open(p, t)) continue;
-                        float d = Vector2.DistanceSquared(new Vector2(tx, ty), new Vector2(fromTx, fromTy));
-                        if (d < bestD) { bestD = d; bestTx = tx; bestTy = ty; }
-                    }
-        }
-        tile = new Point(bestTx, bestTy);
-        return bestTx >= 0;
-    }
-
-    private void PickNextSpot(Planter p)
-    {
-        if (!p.HasFill) InitPiece(p, DirVector(p.Dir), TileOf(p.Pos), TileOf(p.Pos), plantInFirst: true);
-
-        if (!NextLineTile(p, out Point tile))
-        {
-            // pattern exhausted; sweep any pocket the lines missed, else the piece is done
-            if (!NearestOpenTile(p, out tile))
-            {
-                p.State = PlanterState.Done; // piece finished — come move me, boss
-                return;
-            }
-            p.PlantingIn = false;
-            p.FillDir = p.SideDir;
-        }
-        p.LineTile = tile;
-
-        int ts = _map.TileSize, th = _map.TileHeight;
-        int spot = _planted[tile.Y * _map.Width + tile.X];
-        p.PlantSpot = SpotPos(tile.X, tile.Y, spot, ts, th);
-        var target = new Vector2(tile.X * ts + ts / 2f, tile.Y * th + th / 2f);
-        p.Path = Pathfinder.FindPath(_map, p.Pos, target, PlanterCost);
-        p.PathIdx = 0;
-        p.State = p.Path != null ? PlanterState.MovingToPlant : PlanterState.Idle;
-        p.IdleReason = p.Path != null ? "" : "NO PATH TO SPOT";
-    }
-
-    private void CommitTree(Planter p)
-    {
-        int ts = _map.TileSize, th = _map.TileHeight;
-        if (!p.PlantSpot.HasValue) return;
-        int tx = (int)(p.PlantSpot.Value.X / ts), ty = (int)(p.PlantSpot.Value.Y / th);
-        if (tx >= 0 && ty >= 0 && tx < _map.Width && ty < _map.Height &&
-            _planted[ty * _map.Width + tx] < SpotsPerTile)
-        {
-            int ti = ty * _map.Width + tx;
-            RollFault(p, ti, _planted[ti]);
-            _planted[ti]++;
-            TreesPlanted++;
-        }
-    }
-
-    /// <summary>Deterministic planting position in a tile: the center, jittered so lines look hand-planted.</summary>
-    public static Vector2 SpotPos(int tx, int ty, int spot, int ts, int th)
-    {
-        uint h = (uint)(tx * 7349 + ty * 9241 + spot * 131);
-        h = (h ^ (h >> 13)) * 1274126177u;
-        float jx = (h & 0xFF) / 255f * 5f - 2.5f;
-        float jy = ((h >> 8) & 0xFF) / 255f * 3f - 1.5f;
-        return new Vector2(tx * ts + ts / 2f + jx, ty * th + th / 2f + jy);
-    }
-
-    // ---------- movement ----------
 
     /// <summary>Advance along the current path. True when the path is finished (or absent).</summary>
     private bool MoveAlong(Planter p, float dt, float speed = WalkSpeed)

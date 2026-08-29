@@ -29,6 +29,7 @@
     <!-- runtime-loaded content: per-map folders, generated sprites, tweaks -->
     <Content Include="../../game/Content/Maps/**" Link="Content/Maps/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../game/Content/GameTextures/Generated/**" Link="Content/GameTextures/Generated/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../game/Content/Sounds/**" Link="Content/Sounds/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="../../game/Content/tweaks.json" Link="Content/tweaks.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="RestoreDotnetTools" BeforeTargets="Restore">

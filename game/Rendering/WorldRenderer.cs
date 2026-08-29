@@ -295,14 +295,16 @@ public sealed class WorldRenderer
         int tx1 = Math.Min(tiles.Width - 1, (int)((_cam.Position.X + _cam.ViewWidth / zoom) / ts) + 1);
         int ty1 = Math.Min(tiles.Height - 1, (int)((_cam.Position.Y + _cam.ViewHeight / zoom + tiles.MaxElev) / th) + 1);
 
-        // piece membership by tile -> crew color
-        var owner = new Dictionary<int, int>();
+        // piece tint by tile: light blue when unowned, the owner's color when worked
+        var tint = new Dictionary<int, Color>();
+        var unowned = new Color(90, 170, 255) * 0.22f;
         if (Planters != null)
-            for (int i = 0; i < Planters.Planters.Count; i++)
+            foreach (var pc in Planters.Pieces)
             {
-                var pt = Planters.Planters[i].PieceTiles;
-                if (pt == null) continue;
-                foreach (int ti in pt) owner[ti] = i;
+                Color c = unowned;
+                if (pc.Owners.Count > 0)
+                    c = CrewColors[Planters.Planters.IndexOf(pc.Owners[0]) % CrewColors.Length] * 0.26f;
+                foreach (int ti in pc.Tiles) tint[ti] = c;
             }
 
         Vector2 Corner(int tx, int ty) => W2S(new Vector2(tx * ts, ty * th));
@@ -322,7 +324,7 @@ public sealed class WorldRenderer
                     _ => Color.Transparent
                 };
                 int ti = ty * tiles.Width + tx;
-                if (owner.TryGetValue(ti, out int who)) fill = CrewColors[who % CrewColors.Length] * 0.22f;
+                if (tint.TryGetValue(ti, out var pieceTint)) fill = pieceTint;
 
                 Vector2 a = Corner(tx, ty), b = Corner(tx + 1, ty + 1);
                 var r = new Rectangle((int)a.X, (int)a.Y, (int)(b.X - a.X), (int)(b.Y - a.Y));
@@ -347,6 +349,17 @@ public sealed class WorldRenderer
                     sb.Draw(px, new Rectangle(r.X, r.Y, 2, r.Height), oc);
                     sb.Draw(px, new Rectangle(r.Right - 2, r.Y, 2, r.Height), oc);
                 }
+            }
+
+        // piece labels: number, progress, owner
+        if (Planters != null && font != null)
+            foreach (var pc in Planters.Pieces)
+            {
+                int done = Planters.PlantedIn(pc);
+                string who = pc.Owners.Count > 0 ? pc.Owners[0].Name.ToUpperInvariant() : "OPEN";
+                Vector2 at = W2S(pc.Center);
+                if (at.X < -200 || at.X > _cam.ViewWidth + 200 || at.Y < -50 || at.Y > _cam.ViewHeight + 50) continue;
+                font.Draw(sb, $"#{pc.Id} {done}/{pc.Tiles.Count} {who}", at + new Vector2(-40, -6), 1.8f, new Color(160, 210, 255));
             }
 
         // caches

@@ -248,8 +248,13 @@ public sealed class PlayerController
             if (!CarryingBox && _quad.Boxes > 0) return (BoxAction.TakeFromAtv, _quad.Pos);
         }
 
+        // caches go on the road: that is the front of every piece and where bag-ups happen
         if ((Mounted && _quad.Boxes > 0) || (!Mounted && CarryingBox))
-            return (BoxAction.PlaceCache, pos + Facing * 40);
+        {
+            Vector2 spot = pos + Facing * 40;
+            string terr = _map.TerrainName(spot);
+            if (terr == "road" || terr == "trail") return (BoxAction.PlaceCache, spot);
+        }
 
         return (BoxAction.None, default);
     }
@@ -278,7 +283,8 @@ public sealed class PlayerController
                 _quad.Boxes++;
                 break;
             case BoxAction.PlaceCache:
-                if (!_map.IsPassable(target)) break; // no caches in trees/trucks
+                string tn = _map.TerrainName(target);
+                if (tn != "road" && tn != "trail") break; // caches live on the road
                 if (Mounted) _quad.Boxes--;
                 else CarryingBox = false;
                 _caches.Add(new CacheEntity { Pos = target, Boxes = 1 });

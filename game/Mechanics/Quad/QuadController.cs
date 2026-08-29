@@ -24,6 +24,8 @@ public sealed class QuadController
     public int PendingGear { get; private set; } = -1;
     public bool Shifting => PendingGear >= 0;
     private float _shiftTimer;
+    /// <summary>0..1 through the current shift (0 = just pulled the clutch), 0 when not shifting.</summary>
+    public float ShiftProgress => Shifting ? 1f - _shiftTimer / MathF.Max(0.01f, Tweaks.ShiftTime) : 0f;
 
     /// <summary>Boxes of seedlings on the racks.</summary>
     public int Boxes;
@@ -31,6 +33,17 @@ public sealed class QuadController
 
     /// <summary>True while sliding sideways (brake-steer or handbrake) above a crawl.</summary>
     public bool Drifting { get; private set; }
+
+    /// <summary>False while the starter is cranking (and while parked): no throttle, no shifting.</summary>
+    public bool EngineOn = true;
+    /// <summary>Whether the throttle was open this frame (for the engine note).</summary>
+    public bool Throttle { get; private set; }
+
+    // engine speed model: revs climb through each gear from idle to redline
+    // as road speed climbs to that gear's top, then drop back on the upshift
+    public const float IdleRpm = 1700f, RedlineRpm = 4600f;
+    /// <summary>Smoothed engine RPM, driven by speed within the current gear.</summary>
+    public float Rpm { get; private set; } = IdleRpm;
 
     // suspension: the chassis chases ground height on a spring — crest a rise
     // at speed and the quad floats (shadow shows the air), dips compress
@@ -51,6 +64,7 @@ public sealed class QuadController
         ChassisLift = 0f;
         _chassisVel = 0f;
         Tilt = 0f;
+        Rpm = IdleRpm;
     }
 
     /// <summary>Height of the chassis above the ground under it (suspension/airtime).</summary>
@@ -71,7 +85,8 @@ public sealed class QuadController
         float accelRate = Tweaks.GearAccel[Gear] * MathHelper.Lerp(terrain, 1f, torque * 0.8f);
         float maxSpeed = Tweaks.GearMax[Gear];
 
-        bool throttle = input.Throttle;
+        bool throttle = input.Throttle && EngineOn;
+        Throttle = throttle;
         bool braking = input.Brake;
         bool drift = input.Drift;
         float steer = input.Steer;
@@ -177,10 +192,29 @@ public sealed class QuadController
             DirIdx = DirIndexOf(Heading);
 
         UpdateTerrainFollow(map, dt);
+        UpdateRpm(throttle, dt);
+    }
+
+    private void UpdateRpm(bool throttle, float dt)
+    {
+        float target;
+        if (!EngineOn || Shifting)
+            target = IdleRpm; // starter cranking, or clutch in between gears
+        else
+        {
+            float frac = MathHelper.Clamp(Speed / MathF.Max(1f, Tweaks.GearMax[Gear]), 0f, 1f);
+            target = MathHelper.Lerp(IdleRpm, RedlineRpm, frac);
+            if (throttle) target += 150f; // a little extra note under load
+            if (Drifting) target += 250f; // wheels spinning up in the slide
+        }
+        // revs rise faster than they fall; the clutch cut on a shift is abrupt
+        float rate = Shifting ? 9f : target > Rpm ? 5f : 3.5f;
+        Rpm += (target - Rpm) * (1f - MathF.Exp(-rate * dt));
     }
 
     private void UpdateGearbox(GameInput input, float dt)
     {
+        if (!EngineOn) return;
         if (PendingGear >= 0)
         {
             _shiftTimer -= dt;
