@@ -469,14 +469,22 @@ public class PlanterSystem
         var here = TileOf(playerPos);
         var pc = PieceAt(here.X, here.Y);
         if (pc == null) return false;
+        // start at the front (the road side) nearest the boss: lines grow in
+        // from a boundary, never from the middle of the piece
+        Point start = here;
+        float best = float.MaxValue;
+        foreach (int ti in pc.Front)
+        {
+            var ft = TileOfIndex(ti);
+            float d = Vector2.DistanceSquared(CenterOf(ft), playerPos);
+            if (d < best) { best = d; start = ft; }
+        }
         foreach (var p in Planters)
             if (p.State == PlanterState.Following)
             {
                 p.Path = null;
                 p.CutRight = cutRight;
-                var tile = TileOf(p.Pos);
-                if (PieceAt(tile.X, tile.Y) != pc) tile = here;
-                Assign(p, pc, tile, tile, pc.InDir, plantInFirst: true);
+                Assign(p, pc, start, start, pc.InDir, plantInFirst: true);
                 if (p.Bag > 0) PickNextSpot(p);
                 else GoBagUp(p);
             }
@@ -801,7 +809,28 @@ public class PlanterSystem
     {
         if (p.Piece == null || !InBounds(t.X, t.Y)) return false;
         int ti = Index(t);
-        return p.Piece.Tiles.Contains(ti) && !_wall[ti] && _planted[ti] < SpotsPerTile;
+        return p.Piece.Tiles.Contains(ti) && !_wall[ti] && _planted[ti] < SpotsPerTile && Supported(t);
+    }
+
+    /// <summary>
+    /// The rule: a tree goes in beside another tree or against a boundary —
+    /// a planted neighbor (8-way) or a wall/edge next door (4-way). No ghost
+    /// lines floating in the middle of a piece; the fill stays contiguous.
+    /// </summary>
+    private bool Supported(Point t)
+    {
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                if (dx == 0 && dy == 0) continue;
+                var n = new Point(t.X + dx, t.Y + dy);
+                bool straight = dx == 0 || dy == 0;
+                if (!InBounds(n.X, n.Y)) { if (straight) return true; continue; }
+                int ni = Index(n);
+                if (_planted[ni] > 0) return true;
+                if (straight && (!IsGround(n) || _wall[ni])) return true;
+            }
+        return false;
     }
 
     /// <summary>
