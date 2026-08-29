@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ALL gameplay code, shared by every platform head (Desktop now; Android
+       and iOS later). MonoGame.Framework has the same assembly identity on
+       every platform, so a library built against DesktopGL binds fine when
+       a mobile head supplies its own MonoGame.Framework. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>Crewboss</RootNamespace>
+    <AssemblyName>Crewboss.Game</AssemblyName>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.*" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- content is authored here but built and copied by the platform heads -->
+    <None Remove="Content/**" />
+  </ItemGroup>
+</Project>
