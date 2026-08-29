@@ -60,6 +60,8 @@ public class Planter
     public Point LineTile;
     public bool PlantingIn;
     public int BagUps;
+    public bool CutRight = true;  // in-and-right (true) or in-and-left
+    public string IdleReason = ""; // why a planter is stuck (dev view)
 
     // quality: hidden meter that drifts down; low meter = faulted trees.
     // Coaching resets it (and pauses them for a moment).
@@ -143,6 +145,9 @@ public class PlanterSystem
         return best;
     }
 
+    public bool IsCutLine(int tx, int ty) =>
+        tx >= 0 && ty >= 0 && tx < _map.Width && ty < _map.Height && _cutLine[ty * _map.Width + tx];
+
     public byte PlantedAtTile(int tx, int ty) =>
         tx < 0 || ty < 0 || tx >= _map.Width || ty >= _map.Height ? (byte)0 : _planted[ty * _map.Width + tx];
 
@@ -152,7 +157,7 @@ public class PlanterSystem
     /// they plant IN from this spot in the direction they were walking (that
     /// line is their cut line), then work the piece off it.
     /// </summary>
-    public void ToggleCrew(Vector2 playerPos)
+    public void ToggleCrew(Vector2 playerPos, bool cutRight)
     {
         bool pickedAny = false;
         foreach (var p in Planters)
@@ -176,6 +181,7 @@ public class PlanterSystem
             {
                 p.Anchor = p.Pos;
                 p.Path = null;
+                p.CutRight = cutRight;
                 InitPiece(p, DirVector(p.Dir), TileOf(p.Pos), TileOf(p.Pos), plantInFirst: true);
                 if (p.Bag > 0) PickNextSpot(p);
                 else GoBagUp(p);
@@ -205,8 +211,9 @@ public class PlanterSystem
     /// bearing on their own, planting the cut line as they go. The line ends at
     /// unplantable ground, MaxLineTiles, or an empty bag — then they work the piece.
     /// </summary>
-    public void StartLineIn(Planter p, CacheEntity cache, Vector2 dir)
+    public void StartLineIn(Planter p, CacheEntity cache, Vector2 dir, bool cutRight)
     {
+        p.CutRight = cutRight;
         if (p.Bag <= 0 && cache.Boxes > 0)
         {
             cache.Boxes--;
@@ -425,12 +432,14 @@ public class PlanterSystem
         if (cache == null)
         {
             p.State = PlanterState.Idle; // no trees anywhere — the crewboss failed
+            p.IdleReason = "NO TREES IN ANY CACHE";
             p.RetryTimer = 2f;
             return;
         }
         p.Path = Pathfinder.FindPath(_map, p.Pos, cache.Pos, PlanterCost);
         p.PathIdx = 0;
         p.State = p.Path != null ? PlanterState.MovingToCache : PlanterState.Idle;
+        p.IdleReason = p.Path != null ? "" : "NO PATH TO CACHE";
         p.RetryTimer = 2f;
     }
 
@@ -466,7 +475,7 @@ public class PlanterSystem
 
         Point right = new(-p.InDir.Y, p.InDir.X); // right of "in" (screen y is down)
         Point left = new(p.InDir.Y, -p.InDir.X);
-        p.SideDir = OpenGround(p, cutEnd, right) >= OpenGround(p, cutEnd, left) ? right : left;
+        p.SideDir = p.CutRight ? right : left;
 
         // the piece is the enclosed region beside the cut (null = open ground)
         p.PieceTiles = FloodPiece(cutEnd + p.SideDir) ?? FloodPiece(cutStart + p.SideDir);
@@ -485,20 +494,6 @@ public class PlanterSystem
             p.LineTile = cutEnd + p.SideDir;
         }
         p.StepDir = new Point(-p.InDir.X, -p.InDir.Y); // every step-over is one line toward the front
-    }
-
-    /// <summary>How much plantable ground sits on one side of a tile (5-deep probe, 6 wide).</summary>
-    private int OpenGround(Planter p, Point at, Point side)
-    {
-        int n = 0;
-        Point along = new(side.Y, side.X); // perpendicular to side (the "in" axis)
-        for (int k = 1; k <= 5; k++)
-            for (int j = -3; j <= 3; j++)
-            {
-                var t = new Point(at.X + side.X * k + along.X * j, at.Y + side.Y * k + along.Y * j);
-                if (IsGround(t) && !IsCut(t)) n++;
-            }
-        return n;
     }
 
     /// <summary>Bag's full again at the cache: plant in along the next line off the cut line.</summary>
@@ -638,6 +633,7 @@ public class PlanterSystem
         p.Path = Pathfinder.FindPath(_map, p.Pos, target, PlanterCost);
         p.PathIdx = 0;
         p.State = p.Path != null ? PlanterState.MovingToPlant : PlanterState.Idle;
+        p.IdleReason = p.Path != null ? "" : "NO PATH TO SPOT";
     }
 
     private void CommitTree(Planter p)

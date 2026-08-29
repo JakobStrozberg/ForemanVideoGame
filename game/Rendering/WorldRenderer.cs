@@ -260,6 +260,138 @@ public sealed class WorldRenderer
             }
     }
 
+    // ---------- dev view ----------
+
+    private static readonly Color[] CrewColors =
+    {
+        new Color(80, 170, 255), new Color(255, 140, 60), new Color(200, 90, 230), new Color(90, 220, 120),
+    };
+
+    private void Line(SpriteBatch sb, Texture2D px, Vector2 a, Vector2 b, Color c, float thick = 1f)
+    {
+        var d = b - a;
+        float len = d.Length();
+        if (len < 0.5f) return;
+        sb.Draw(px, a, null, c, MathF.Atan2(d.Y, d.X), new Vector2(0, 0.5f), new Vector2(len, thick), SpriteEffects.None, 0f);
+    }
+
+    /// <summary>
+    /// F3 dev view: the tile grid the mechanics run on. Terrain tint, planted
+    /// count per tile, cut lines, each planter's piece in their color with
+    /// their current line, direction, state and path — so behavior can be
+    /// read straight off the ground.
+    /// </summary>
+    public void DrawDebug(SpriteBatch sb)
+    {
+        var tiles = _map.Tiles;
+        if (tiles == null) return;
+        var px = _art.Solid("dbgPx", Color.White);
+        var font = _art.Font;
+        int ts = tiles.TileSize, th = tiles.TileHeight;
+        float zoom = _cam.Zoom;
+
+        int tx0 = Math.Max(0, (int)(_cam.Position.X / ts) - 1);
+        int ty0 = Math.Max(0, (int)(_cam.Position.Y / th) - 1);
+        int tx1 = Math.Min(tiles.Width - 1, (int)((_cam.Position.X + _cam.ViewWidth / zoom) / ts) + 1);
+        int ty1 = Math.Min(tiles.Height - 1, (int)((_cam.Position.Y + _cam.ViewHeight / zoom + tiles.MaxElev) / th) + 1);
+
+        // piece membership by tile -> crew color
+        var owner = new Dictionary<int, int>();
+        if (Planters != null)
+            for (int i = 0; i < Planters.Planters.Count; i++)
+            {
+                var pt = Planters.Planters[i].PieceTiles;
+                if (pt == null) continue;
+                foreach (int ti in pt) owner[ti] = i;
+            }
+
+        Vector2 Corner(int tx, int ty) => W2S(new Vector2(tx * ts, ty * th));
+
+        for (int ty = ty0; ty <= ty1; ty++)
+            for (int tx = tx0; tx <= tx1; tx++)
+            {
+                var terr = tiles.TerrainAtTile(tx, ty);
+                Color fill = terr.Name switch
+                {
+                    "forest" => new Color(0, 60, 0) * 0.35f,
+                    "road" or "trail" => new Color(210, 190, 120) * 0.35f,
+                    "swamp" => new Color(40, 80, 160) * 0.35f,
+                    "rock" => new Color(160, 160, 170) * 0.35f,
+                    "obstacle" => new Color(220, 40, 40) * 0.5f,
+                    "cream" => new Color(230, 210, 150) * 0.2f,
+                    _ => Color.Transparent
+                };
+                int ti = ty * tiles.Width + tx;
+                if (owner.TryGetValue(ti, out int who)) fill = CrewColors[who % CrewColors.Length] * 0.22f;
+
+                Vector2 a = Corner(tx, ty), b = Corner(tx + 1, ty + 1);
+                var r = new Rectangle((int)a.X, (int)a.Y, (int)(b.X - a.X), (int)(b.Y - a.Y));
+                if (fill.A > 0) sb.Draw(px, r, fill);
+                sb.Draw(px, new Rectangle(r.X, r.Y, r.Width, 1), Color.White * 0.12f);
+                sb.Draw(px, new Rectangle(r.X, r.Y, 1, r.Height), Color.White * 0.12f);
+
+                // planted: one dot per spot, green (red if faulted)
+                int n = Planters?.PlantedAtTile(tx, ty) ?? 0;
+                for (int s = 0; s < n; s++)
+                {
+                    bool bad = Planters.IsFault(tx, ty, s);
+                    sb.Draw(px, new Rectangle(r.X + 4 + (s % 2) * 12, r.Y + 3 + (s / 2) * 8, 4, 4),
+                        bad ? new Color(230, 60, 50) : new Color(90, 230, 110));
+                }
+                // cut line: orange frame
+                if (Planters != null && Planters.IsCutLine(tx, ty))
+                {
+                    var oc = new Color(255, 150, 40) * 0.9f;
+                    sb.Draw(px, new Rectangle(r.X, r.Y, r.Width, 2), oc);
+                    sb.Draw(px, new Rectangle(r.X, r.Bottom - 2, r.Width, 2), oc);
+                    sb.Draw(px, new Rectangle(r.X, r.Y, 2, r.Height), oc);
+                    sb.Draw(px, new Rectangle(r.Right - 2, r.Y, 2, r.Height), oc);
+                }
+            }
+
+        // caches
+        foreach (var c in _caches)
+            font?.Draw(sb, $"CACHE {c.Boxes}", W2S(c.Pos) + new Vector2(-24, 6), 1.6f, new Color(255, 222, 92));
+
+        // planters: line tile, directions, path, state, reason
+        if (Planters == null) return;
+        for (int i = 0; i < Planters.Planters.Count; i++)
+        {
+            var p = Planters.Planters[i];
+            var col = CrewColors[i % CrewColors.Length];
+            Vector2 at = W2S(p.Pos);
+
+            if (p.Path != null)
+            {
+                Vector2 prev = at;
+                for (int k = Math.Max(0, p.PathIdx); k < p.Path.Count; k++)
+                {
+                    Vector2 nxt = W2S(p.Path[k]);
+                    Line(sb, px, prev, nxt, col * 0.7f);
+                    prev = nxt;
+                }
+            }
+            if (p.HasFill)
+            {
+                Vector2 lc = W2S(new Vector2(p.LineTile.X * ts + ts / 2f, p.LineTile.Y * th + th / 2f));
+                sb.Draw(px, new Rectangle((int)lc.X - 5, (int)lc.Y - 5, 10, 10), col);
+                Vector2 dir = new Vector2(p.PlantingIn ? p.InDir.X : p.FillDir.X, p.PlantingIn ? p.InDir.Y : p.FillDir.Y);
+                Line(sb, px, lc, lc + dir * 26f, col, 2f);
+                Vector2 side = new Vector2(p.SideDir.X, p.SideDir.Y);
+                Line(sb, px, lc, lc + side * 12f, Color.White * 0.8f, 2f);
+            }
+            if (font != null)
+            {
+                string state = p.State.ToString().ToUpperInvariant();
+                if (p.HasFill && p.State != PlanterState.Idle && p.State != PlanterState.Done)
+                    state += p.PlantingIn ? " IN" : " BACKFILL";
+                font.Draw(sb, $"{p.Name} {state} BAG {p.Bag}", at + new Vector2(-30, -40), 1.5f, col);
+                if (p.State == PlanterState.Idle && p.IdleReason.Length > 0)
+                    font.Draw(sb, p.IdleReason, at + new Vector2(-30, -30), 1.5f, new Color(255, 90, 80));
+            }
+        }
+    }
+
     // ---------- prompts ----------
 
     private void DrawBadge(SpriteBatch sb, Texture2D badge, Vector2 worldPos)
@@ -335,6 +467,12 @@ public sealed class WorldRenderer
         var dir = new Vector2(MathF.Cos(ang), MathF.Sin(ang));
 
         sb.Draw(tex, start, null, Color.White * 0.9f, ang, new Vector2(0, 0.5f), new Vector2(len, 3f), SpriteEffects.None, 0f);
+
+        // the cut side: a short tick off the shaft toward the piece
+        Vector2 side = _player.CutRight ? new Vector2(-dir.Y, dir.X) : new Vector2(dir.Y, -dir.X);
+        for (float f = 0.25f; f < 1f; f += 0.25f)
+            sb.Draw(tex, start + dir * (len * f), null, Color.White * 0.9f, MathF.Atan2(side.Y, side.X),
+                new Vector2(0, 0.5f), new Vector2(18f, 3f), SpriteEffects.None, 0f);
 
         // arrowhead: two strokes angled back from the tip
         Vector2 tip = start + dir * len;

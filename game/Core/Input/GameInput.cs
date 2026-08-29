@@ -76,6 +76,8 @@ public sealed class GameInput
     public bool Reset => Pressed(Keys.R);
     public bool Restart => Pressed(Keys.F5);
     public bool ToggleHelp => Pressed(Keys.H);
+    public bool ToggleCutSide => Pressed(Keys.Tab);
+    public bool ToggleDebug => Pressed(Keys.F3);
     public bool ZoomIn => Pressed(Keys.OemPlus, Keys.Add);
     public bool ZoomOut => Pressed(Keys.OemMinus, Keys.Subtract);
     public bool AnyKeyPressed => _cur.GetPressedKeys().Length > 0 && _prev.GetPressedKeys().Length == 0;

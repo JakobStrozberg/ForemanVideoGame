@@ -72,6 +72,9 @@ public sealed class Hud
 
         if (planters != null)
             font.Draw(sb, planters.TreesPlanted.ToString(), new Vector2(viewW - 150, Base - 28), 3f, new Color(140, 220, 130));
+
+        // the next cut-in goes in-and-right or in-and-left (Tab)
+        font.Draw(sb, player.CutRight ? "CUT: IN AND RIGHT" : "CUT: IN AND LEFT", new Vector2(viewW / 2f - 90, Base - 28), 2.2f, new Color(255, 222, 92));
     }
 
     /// <summary>Controls card, bottom-left. Font charset is 0-9 A-Z : ! - . / — keep text inside it.</summary>
@@ -88,6 +91,7 @@ public sealed class Hud
             "E: MOUNT  Q: BOXES",
             "F: CREW  C: LINE-IN",
             "T: COACH  R: RESET",
+            "TAB: CUT SIDE  F3: DEV VIEW",
             "ZOOM: PLUS/MINUS",
             "F5: RESTART  H: HIDE",
         };

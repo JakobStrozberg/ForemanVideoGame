@@ -31,6 +31,7 @@ public class GameplayScreen : Screen
     private Hud _hud;
 
     private bool _showHelp = true;
+    private bool _debug; // F3 dev view: tiles, pieces, planter brains
     private float _preGameGrace = 0.35f; // the menu keypress that launched us must not skip the overview
 
     // pause menu: Resume / Restart Day / Quit To Menu
@@ -121,6 +122,7 @@ public class GameplayScreen : Screen
         if (_input.ZoomIn) { _presenter.ApplyZoom(_presenter.Zoom * 1.15f); SyncView(); }
         if (_input.ZoomOut) { _presenter.ApplyZoom(_presenter.Zoom / 1.15f); SyncView(); }
         if (_input.ToggleHelp) _showHelp = !_showHelp;
+        if (_input.ToggleDebug) _debug = !_debug;
 
         if (_map == null) return;
 
@@ -238,7 +240,11 @@ public class GameplayScreen : Screen
         if (_map != null)
         {
             if (_day.PreGame) _hud.DrawPreGame(spriteBatch, _presenter.ViewWidth, _presenter.ViewHeight, _map.Texture, Blocks.Get(_blockName).Title);
-            else _world.Draw(spriteBatch);
+            else
+            {
+                _world.Draw(spriteBatch);
+                if (_debug) _world.DrawDebug(spriteBatch);
+            }
         }
         spriteBatch.End();
 

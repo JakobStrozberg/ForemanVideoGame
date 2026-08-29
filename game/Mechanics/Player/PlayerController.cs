@@ -27,6 +27,8 @@ public sealed class PlayerController
     public float WalkAnim { get; private set; }
     public bool Walking { get; private set; }
     public bool CarryingBox { get; private set; }
+    /// <summary>Cut-in side for the next line-in or release: in-and-right (true) or in-and-left.</summary>
+    public bool CutRight { get; private set; } = true;
 
     /// <summary>Where the crewboss is: on the quad, or on foot.</summary>
     public Vector2 Pos => Mounted ? _quad.Pos : FootPos;
@@ -72,13 +74,14 @@ public sealed class PlayerController
     public void UpdateAiming(GameInput input, float dt)
     {
         float rot = 2.4f * dt;
+        if (input.ToggleCutSide) CutRight = !CutRight;
         if (input.AimLeft) AimAngle -= rot;
         if (input.AimRight) AimAngle += rot;
 
         if (input.AimConfirm)
         {
             var dir = new Vector2(MathF.Cos(AimAngle), MathF.Sin(AimAngle));
-            Planters.StartLineIn(_aimPlanter, AimCache, dir);
+            Planters.StartLineIn(_aimPlanter, AimCache, dir, CutRight);
             Aiming = false;
         }
         else if (input.AimCancel)
@@ -116,9 +119,10 @@ public sealed class PlayerController
     /// <summary>E = mount/dismount, Q = box action, F = crew, C = line-in, T = coach.</summary>
     public void HandleActions(GameInput input)
     {
+        if (input.ToggleCutSide) CutRight = !CutRight;
         if (input.Mount) ToggleMount();
         if (input.BoxAction) DoBoxAction();
-        if (input.Crew) Planters?.ToggleCrew(Pos);
+        if (input.Crew) Planters?.ToggleCrew(Pos, CutRight);
         if (input.LineIn) TryStartAiming();
         if (input.Coach && !Mounted && Planters != null)
         {
