@@ -14,7 +14,7 @@ public class TileTerrain
 }
 
 /// <summary>
-/// Terrain data layer generated alongside the map art by tools/ArtTool.
+/// Terrain data layer generated alongside the map art by dev/ArtTool.
 /// One char per tile; the legend defines passability and speed multipliers.
 /// </summary>
 public class TileMap

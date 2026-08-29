@@ -216,7 +216,7 @@ public class MainMenuScreen : Screen
             {
                 // If that fails, try loading from direct file paths
                 using (System.IO.FileStream fileStream = new System.IO.FileStream(
-                    "/Users/jakobstrozberg/Desktop/CrewbossGame/src/Content/GameTextures/Buttons/Map1.png", 
+                    System.IO.Path.Combine(Tweaks.ContentRoot(), "GameTextures", "Buttons", "Map1.png"), 
                     System.IO.FileMode.Open))
                 {
                     _map1ButtonTexture = Texture2D.FromStream(Game.GraphicsDevice, fileStream);
@@ -224,7 +224,7 @@ public class MainMenuScreen : Screen
                 }
                 
                 using (System.IO.FileStream fileStream = new System.IO.FileStream(
-                    "/Users/jakobstrozberg/Desktop/CrewbossGame/src/Content/GameTextures/Buttons/Map2.png", 
+                    System.IO.Path.Combine(Tweaks.ContentRoot(), "GameTextures", "Buttons", "Map2.png"), 
                     System.IO.FileMode.Open))
                 {
                     _map2ButtonTexture = Texture2D.FromStream(Game.GraphicsDevice, fileStream);

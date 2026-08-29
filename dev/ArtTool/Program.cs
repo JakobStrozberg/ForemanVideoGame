@@ -12,13 +12,11 @@ if (args.Length == 0)
               Extract a master palette (median cut) from all images in a directory.
 
           arttool compose <block.json> <brushDir> <outDir>
-              Composite a block definition into <outDir>/<Name>.png + <Name>.tiles.json
-
-          arttool horizon <outDir> [seed=7]
-              Generate the parallax "View" layers (sky, ridges, treeline).
+              Composite a block definition into <outDir>/<Name>.png + tiles/trees/debris/veg json
 
           arttool sprites <outDir> [seed=7]
-              Generate runtime prop sprites (Cache.png — placed by the player in-game).
+              Generate every runtime sprite atlas (trees, debris, veg, quad, figures,
+              seedlings, cache, badges, font).
         """);
     return 1;
 }
