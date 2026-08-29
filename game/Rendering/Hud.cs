@@ -77,33 +77,69 @@ public sealed class Hud
         font.Draw(sb, player.CutRight ? "CUT: IN AND RIGHT" : "CUT: IN AND LEFT", new Vector2(viewW / 2f - 90, Base - 28), 2.2f, new Color(255, 222, 92));
     }
 
-    /// <summary>Controls card, bottom-left. Font charset is 0-9 A-Z : ! - . / — keep text inside it.</summary>
+    /// <summary>
+    /// Controls card, bottom-left, big and grouped: what the key is, then
+    /// what it does, aligned in two columns. H hides it. Font charset is
+    /// 0-9 A-Z : ! - . / so keep the text inside that.
+    /// </summary>
     private void DrawControls(SpriteBatch sb, int viewH)
     {
         var font = _art.Font;
         if (font == null) return;
-        string[] lines =
+
+        // (key, action); an empty key = section header
+        (string key, string act)[] rows =
         {
-            "DRIVE: WASD/ARROWS",
-            "GAS: UP  BRAKE: DOWN/SPACE",
-            "DRIFT: HOLD SHIFT",
-            "GEARS: X/Z",
-            "E: MOUNT  Q: BOXES",
-            "F: CREW  C: LINE-IN",
-            "T: COACH  R: RESET",
-            "TAB: CUT SIDE  F3: DEV VIEW",
-            "ZOOM: PLUS/MINUS",
-            "F5: RESTART  H: HIDE",
+            ("", "QUAD"),
+            ("W / UP", "GAS"),
+            ("S / DOWN", "BRAKE"),
+            ("A D", "STEER"),
+            ("SHIFT", "DRIFT - HOLD IT"),
+            ("X / Z", "GEAR UP / DOWN"),
+            ("", "CREWBOSS"),
+            ("E", "GET ON / OFF THE QUAD"),
+            ("Q", "BOXES: LOAD - DROP - CACHE"),
+            ("F", "PICK UP / RELEASE CREW"),
+            ("C", "LINE-IN FROM A CACHE"),
+            ("T", "COACH A PLANTER"),
+            ("TAB", "CUT IN AND RIGHT / LEFT"),
+            ("", "GAME"),
+            ("ESC", "PAUSE"),
+            ("F3", "DEV VIEW"),
+            ("H", "HIDE THIS CARD"),
         };
-        const float fs = 1.6f;
-        int lineH = (int)(7 * fs);
-        int w = 0;
-        foreach (var l in lines) w = Math.Max(w, (int)BitmapFont.Measure(l, fs));
-        int h = lines.Length * lineH + 12;
-        int x = 8, y = viewH - h - 8;
-        sb.Draw(_art.Solid("helpBg", Color.Black), new Rectangle(x - 4, y - 4, w + 16, h + 8), Color.White * 0.55f);
-        for (int i = 0; i < lines.Length; i++)
-            font.Draw(sb, lines[i], new Vector2(x, y + i * lineH), fs, new Color(230, 230, 210));
+
+        const float fs = 2.4f;
+        int lineH = (int)(7 * fs) + 4;
+        int keyW = 0, actW = 0;
+        foreach (var (k, a) in rows)
+        {
+            keyW = Math.Max(keyW, (int)BitmapFont.Measure(k, fs));
+            actW = Math.Max(actW, (int)BitmapFont.Measure(a, fs));
+        }
+        int pad = 14, gap = 22;
+        int w = pad * 2 + keyW + gap + actW;
+        int h = pad * 2 + rows.Length * lineH;
+        int x = 12, y = viewH - h - 12;
+
+        sb.Draw(_art.Solid("helpBg", Color.Black), new Rectangle(x, y, w, h), Color.White * 0.78f);
+        sb.Draw(_art.Solid("helpEdge", new Color(255, 222, 92)), new Rectangle(x, y, w, 3), Color.White);
+
+        var gold = new Color(255, 222, 92);
+        var keyCol = Color.White;
+        var actCol = new Color(200, 205, 190);
+        for (int i = 0; i < rows.Length; i++)
+        {
+            var (k, a) = rows[i];
+            float ly = y + pad + i * lineH;
+            if (k.Length == 0)
+            {
+                font.Draw(sb, a, new Vector2(x + pad, ly), fs, gold);
+                continue;
+            }
+            font.Draw(sb, k, new Vector2(x + pad, ly), fs, keyCol);
+            font.Draw(sb, a, new Vector2(x + pad + keyW + gap, ly), fs, actCol);
+        }
     }
 
     public void DrawPreGame(SpriteBatch sb, int viewW, int viewH, Texture2D mapTexture, string blockName)
