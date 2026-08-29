@@ -769,38 +769,47 @@ public class PlanterSystem
         p.IdleReason = "";
     }
 
-    /// <summary>Bag's full again: plant in along the next line off the cut, from the front.</summary>
+    /// <summary>
+    /// Bag's full again: plant in along YOUR line. Walk the cut line from the
+    /// front; the first line off it with an open tile is the one — start at
+    /// its first open tile (whatever the backfill already took is skipped)
+    /// and plant in until you reach your back, then backfill on. Never a
+    /// fresh line somewhere else along the road.
+    /// </summary>
     private void StartPlantIn(Planter p)
     {
         if (!p.HasFill || p.Piece == null) return;
         p.BagUps++;
-        var start = new Point(p.CutStart.X + p.SideDir.X * p.BagUps, p.CutStart.Y + p.SideDir.Y * p.BagUps);
-        if (Open(p, start))
+
+        for (int k = 1; k <= 64; k++)
         {
-            p.PlantingIn = true;
-            p.FillDir = p.InDir;
-            p.LineTile = start;
-            return;
+            bool anyInPiece = false;
+            for (int j = 0; j < MaxLineTiles; j++)
+            {
+                var t = new Point(p.CutStart.X + p.SideDir.X * k + p.InDir.X * j,
+                                  p.CutStart.Y + p.SideDir.Y * k + p.InDir.Y * j);
+                if (!InBounds(t.X, t.Y)) break;
+                int ti = Index(t);
+                if (!p.Piece.Tiles.Contains(ti))
+                {
+                    if (anyInPiece) break;   // walked out the back of the piece
+                    continue;                // haven't reached the piece yet (road edge)
+                }
+                anyInPiece = true;
+                if (Open(p, t))
+                {
+                    p.PlantingIn = true;
+                    p.FillDir = p.InDir;
+                    p.LineTile = t;
+                    return;
+                }
+            }
+            if (!anyInPiece) break;          // that far off the cut is outside the piece: done with lines
         }
-        // that line's in already (or off the piece): plant in from the nearest open front tile
-        int bestTi = -1; float best = float.MaxValue;
-        foreach (int ti in p.Piece.Front)
-        {
-            if (_planted[ti] >= SpotsPerTile) continue;
-            float d = Vector2.DistanceSquared(CenterOf(TileOfIndex(ti)), p.Pos);
-            if (d < best) { best = d; bestTi = ti; }
-        }
-        if (bestTi >= 0)
-        {
-            p.PlantingIn = true;
-            p.FillDir = p.InDir;
-            p.LineTile = TileOfIndex(bestTi);
-        }
-        else
-        {
-            p.PlantingIn = false;
-            p.FillDir = p.SideDir;
-        }
+
+        // nothing left along the lines: just keep backfilling from the nearest open tile
+        p.PlantingIn = false;
+        p.FillDir = p.SideDir;
     }
 
     // ---------- the fill pattern ----------
