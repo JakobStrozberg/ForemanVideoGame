@@ -32,6 +32,7 @@ docs/            design docs + reference photos
 ```bash
 dev/scripts/run.sh            # build + launch straight into Block1
 dev/scripts/run.sh Block1     # any block under game/Content/Maps/
+dev/scripts/run.sh --phone    # landscape iPhone aspect (19.5:9) to check mobile framing
 ```
 Or open `Crewboss.sln` and run the `Crewboss.Desktop` project. Esc quits,
 F5 rebuilds and relaunches into the same block, H hides the controls card.

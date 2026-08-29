@@ -30,7 +30,13 @@ public class CrewbossGame : Game
         IsFixedTimeStep = false;
         _graphics.SynchronizeWithVerticalRetrace = true;
         
-        // Set screen dimensions
+        // Window shape. CREWBOSS_WINDOW=phone previews a landscape iPhone
+        // aspect (19.5:9) so mobile framing can be checked on the Mac anytime.
+        if (System.Environment.GetEnvironmentVariable("CREWBOSS_WINDOW") == "phone")
+        {
+            _screenWidth = 1950;
+            _screenHeight = 900;
+        }
         _graphics.PreferredBackBufferWidth = _screenWidth;
         _graphics.PreferredBackBufferHeight = _screenHeight;
     }
